@@ -52,7 +52,7 @@ export function installQuake3Socket(server,{db,config}) {
      upstream.on('message',data=>{if(client.bufferedAmount>262144)return stop();if(client.readyState===WebSocket.OPEN)client.send(data,{binary:true});});
     });
    });
-  }catch{if(!socket.destroyed)socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');}
+  }catch{if(!socket.destroyed)socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');}
  });
  server.closeQuake3Sockets=()=>{for(const c of clients)c.terminate();};
  server.on('close',()=>{server.closeQuake3Sockets();wss.close();});

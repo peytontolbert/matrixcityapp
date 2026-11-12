@@ -50,7 +50,7 @@ export function createGameService({key,launch}){
      udp.send(data,room.engine.port,'127.0.0.1');
     });
    });
-  }catch{socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');}
+  }catch{socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');}
  });
  const timer=setInterval(()=>rooms.sweep(),15000);timer.unref();
  server.requestTimeout=10000;server.headersTimeout=10000;
