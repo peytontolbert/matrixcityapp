@@ -56,12 +56,9 @@ Domain and DNS setup are managed separately in Azure. See
 LANParty functionality is not ported yet. Add features in isolated modules with
 license and public-source checks. Keep generated/private assets outside this repo.
 
-Google OAuth will run on a separate private VPS API, following the existing
-platform architecture. Keep the Google client secret, session keys, database and
-tunnel credentials exclusively on the VPS. Register the final production and
-localhost callback URLs when enabling it; use state, PKCE, secure HttpOnly cookies,
-exact allowed origins and rate limits. The static site currently has no login
-button, callback handler or active API configuration. Do not add a public API URL
-until its backend and callback behavior are implemented and tested.
+Google OAuth runs on a separate VPS account API. See [account setup](docs/ACCOUNTS.md)
+for configuration, session security and deployment. Credentials remain exclusively
+in root-only VPS configuration; the frontend receives no client secret. Account
+sign-in becomes available when the new Google client and callback are configured.
 
 This city preview is illustrative geometry, not the existing Matrix City game.
