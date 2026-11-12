@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {createArcade} from './arcade.mjs';
 import dgram from 'node:dgram';
 import {timingSafeEqual} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
@@ -9,7 +10,9 @@ export function createGameService({key,launch}){
  if(!key||key.length<43)throw Error('A dedicated game-service key is required');
  const rooms=new Rooms({launch});const expected=Buffer.from('Bearer '+key);
  const authorized=req=>{const value=Buffer.from(req.headers.authorization||'');return value.length===expected.length&&timingSafeEqual(value,expected);};
+ const arcade=createArcade({authorized});
  const server=http.createServer({maxHeaderSize:8192},async(req,res)=>{
+  if(await arcade.http(req,res))return;
   res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');
   try{
    fail(authorized(req),403,'Forbidden');fail(req.method==='POST'&&req.url==='/rpc',404,'Not found');
@@ -20,6 +23,7 @@ export function createGameService({key,launch}){
  });
  const wss=new WebSocketServer({noServer:true,maxPayload:16384,perMessageDeflate:false});
  server.on('upgrade',(req,socket,head)=>{
+  if(arcade.upgrade(req,socket,head))return;
   socket.on('error',()=>{});
   try{
    fail(req.url==='/socket'&&authorized(req),403,'Forbidden');
@@ -50,8 +54,8 @@ export function createGameService({key,launch}){
  });
  const timer=setInterval(()=>rooms.sweep(),15000);timer.unref();
  server.requestTimeout=10000;server.headersTimeout=10000;
- server.on('close',()=>{clearInterval(timer);rooms.stop();wss.close();});
- return {server,rooms};
+ server.on('close',()=>{clearInterval(timer);rooms.stop();arcade.stop();wss.close();});
+ return {server,rooms,arcade};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const {server,rooms}=createGameService({key:process.env.QUAKE3_SERVICE_KEY,launch:config=>launchEngine(config,{binary:process.env.QUAKE3_BINARY,assets:process.env.QUAKE3_ASSETS,state:process.env.QUAKE3_STATE||'/var/lib/matrixgames-quake3/rooms'})});

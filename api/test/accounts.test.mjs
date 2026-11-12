@@ -36,6 +36,19 @@ test('game requests require login and exact origin; player identity always comes
  try{assert.equal((await call('/v1/quake3/create',{...options,headers:{...options.headers,Cookie:session}})).status,200);const me=await(await call('/v1/me',{headers:{Cookie:session}})).json();assert.equal(received.actor,me.user.id);assert.equal(received.action,'create');assert.notEqual(received.actor,'spoofed-player');}
  finally{config.quake3Key='';config.quake3Origin=oldOrigin;await new Promise(r=>broker.close(r));}
 });
+test('arcade actions require exact origin and session identity; create quota spans games',async()=>{
+ const options={method:'POST',headers:{Origin:config.appOrigin,'Content-Type':'application/json'},body:JSON.stringify({actor:'spoofed-player',code:'ABCDEF0123456789'})};
+ for(const game of ['duck-game','broforce','gungeon','nuclear-throne'])assert.equal((await call('/v1/arcade/'+game+'/create',options)).status,401);
+ const login=await start(),signed=await complete(login),session=signed.headers.getSetCookie().find(x=>x.startsWith('__Host-mg_session=')).split(';')[0];
+ assert.equal((await call('/v1/arcade/broforce/create',{...options,headers:{Cookie:session,'Content-Type':'application/json'}})).status,403);
+ const paths=[],actors=[];const broker=http.createServer(async(req,res)=>{let raw='';for await(const p of req)raw+=p;const body=JSON.parse(raw);paths.push(req.url);actors.push(body.actor);res.setHeader('Content-Type','application/json');res.end('{"ok":true}');});await new Promise(r=>broker.listen(0,'127.0.0.1',r));
+ const previous=config.quake3Origin;config.quake3Origin='http://127.0.0.1:'+broker.address().port;config.quake3Key='test-only-service-key';
+ try{
+  for(const game of ['duck-game','broforce','gungeon','nuclear-throne'])assert.equal((await call('/v1/arcade/'+game+'/create',{...options,headers:{...options.headers,Cookie:session}})).status,200);
+  const me=await(await call('/v1/me',{headers:{Cookie:session}})).json();assert.ok(actors.every(id=>id===me.user.id));assert.deepEqual(paths,['duck-game','broforce','gungeon','nuclear-throne'].map(g=>'/arcade/'+g+'/rpc'));
+  assert.equal((await call('/v1/arcade/broforce/create',{...options,headers:{...options.headers,Cookie:session}})).status,429);
+ }finally{config.quake3Origin=previous;config.quake3Key='';await new Promise(r=>broker.close(r));}
+});
 async function start(){const response=await call('/auth/google/start');assert.equal(response.status,302);const query=new URL(response.headers.get('location')).searchParams;nonce=query.get('nonce');const state=query.get('state');return {response,query,state,cookie:'__Host-mg_oauth='+state};}
 async function complete(login){return call('/api/callback?'+new URLSearchParams({state:login.state,code:'fixture-authorization-code'}),{headers:{Cookie:login.cookie}});}
 test('login uses PKCE, state and host-only secure cookies; callback creates a persisted account',async()=>{
