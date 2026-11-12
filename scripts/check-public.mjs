@@ -4,6 +4,8 @@ const files=execFileSync('git',['ls-files','--cached','--others','--exclude-stan
 const prohibited=[/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,/GOCSPX-[A-Za-z0-9_-]{16,}/,/gh[pousr]_[A-Za-z0-9]{30,}/,/github_pat_[A-Za-z0-9_]{30,}/,/AKIA[A-Z0-9]{16}/,/192\.168\.\d+\.\d+/];
 let bad=false;
 for(const file of new Set(files)){
+ if(/\.(?:pk3|bsp|qvm|pak)$/i.test(file)){console.error('Game data must not be public:',file);bad=true;continue;}
+
  if(/(^|\/)(?:\.env(?:\..*)?|client_secret[^/]*|[^/]*\.(?:pem|key))$/.test(file)){console.error('Private file:',file);bad=true;continue;}
  const value=await readFile(file,'utf8');
  if(prohibited.some(re=>re.test(value))){console.error('Potential private material:',file);bad=true;}

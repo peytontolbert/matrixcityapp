@@ -1,0 +1,22 @@
+Quake III Arena engine notices
+
+This application uses the original Quake III engine via ioquake3 and QuakeJS.
+It is not affiliated with id Software. Quake III Arena is a trademark of its owner.
+No retail game data is provided. Every player supplies their own installation.
+
+QuakeJS: https://github.com/inolen/quakejs
+Pinned revision: 977b188e05b239b6c48d7ecda9d04e9ca03f1578
+Engine source submodule: https://github.com/inolen/ioq3
+Pinned revision: 4f7d7bf2159aa0a18b79bb417aa760abac817b2a
+QuakeJS supporting code license: /assets/quake3-quakejs-LICENSE
+Engine GPL-2.0 license: /assets/quake3-COPYING.txt
+Corresponding upstream source archive: /assets/quake3-source.tar.gz
+Matrix Games adapter source and reproducible patch:
+https://github.com/peytontolbert/matrixcityapp/blob/main/scripts/build-quake3.mjs
+
+Changes: mount player-selected retail PK3 files in memory; disable CDN downloads;
+route multiplayer through authenticated, single-use room tickets.
+The existing QuakeJS browser engine is compiled JavaScript (asm.js), not WASM.
+The engine retains its GPL license. The included source archive contains the
+upstream build instructions, source, and compiler integration. The launcher and
+server integration are separate from the original game data.

@@ -9,5 +9,7 @@ export function configuration(env=process.env){
  const port=Number(env.PORT||4190);if(!Number.isInteger(port)||port<1||port>65535)throw Error('Invalid account port');
  const googleRedirectUri=env.GOOGLE_REDIRECT_URI||apiOrigin+'/api/callback';
  if(![apiOrigin+'/api/callback',appOrigin+'/api/callback'].includes(googleRedirectUri))throw Error('Invalid Google callback');
- return {production,port,appOrigin,apiOrigin,googleRedirectUri,googleClientId:env.GOOGLE_CLIENT_ID||'',googleClientSecret:env.GOOGLE_CLIENT_SECRET||'',databaseUrl:env.DATABASE_URL,allowedOrigins:new Set([appOrigin,...(production?['https://www.matrixgames.app']:[])]),trustCloudflareProxy:production};
+ const quake3Origin=env.QUAKE3_SERVICE_ORIGIN||'http://127.0.0.1:4191';
+ const gameUrl=new URL(quake3Origin);if(gameUrl.protocol!=='http:'||gameUrl.hostname!=='127.0.0.1'||gameUrl.origin!==quake3Origin)throw Error('Game service must be loopback HTTP');
+ return {production,port,appOrigin,apiOrigin,googleRedirectUri,googleClientId:env.GOOGLE_CLIENT_ID||'',googleClientSecret:env.GOOGLE_CLIENT_SECRET||'',databaseUrl:env.DATABASE_URL,allowedOrigins:new Set([appOrigin,...(production?['https://www.matrixgames.app']:[])]),trustCloudflareProxy:production,quake3Origin,quake3Key:env.QUAKE3_SERVICE_KEY||''};
 }

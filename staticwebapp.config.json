@@ -1,6 +1,12 @@
 {
   "routes": [
     {
+      "route": "/quake3.html",
+      "headers": {
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://api.matrixgames.app wss://api.matrixgames.app; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+      }
+    },
+    {
       "route": "/api/callback",
       "rewrite": "/oauth-callback.html",
       "headers": {

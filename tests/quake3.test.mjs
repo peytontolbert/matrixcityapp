@@ -1,0 +1,6 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {selectPaks,readPaks,findGameFolder} from '../web/quake3-files.js';
+const files=()=>Array.from({length:9},(_,i)=>({name:`pak${i}.pk3`,size:100,arrayBuffer:async()=>new Uint8Array([80,75,3,4]).buffer}));
+test('retail loading requires all patch paks and ignores unrelated personal files',()=>{const input=files();assert.equal(selectPaks([...input,{name:'private.txt',size:100}]).length,9);assert.throws(()=>selectPaks(input.slice(0,8)),/pak8/);assert.throws(()=>selectPaks([...input,input[0]]),/More than one/);assert.throws(()=>selectPaks([{...input[0],size:999999999},...input.slice(1)]),/Invalid size/);});
+test('PK3 signature is checked before the engine receives files',async()=>{assert.equal((await readPaks(selectPaks(files()))).length,9);const input=files();input[0].arrayBuffer=async()=>new Uint8Array([0,0,0,0]).buffer;await assert.rejects(readPaks(selectPaks(input)),/valid PK3/);});
+test('directory lookup only probes known game folders',async()=>{const tried=[];const handle={async getDirectoryHandle(path){tried.push(path);throw Error('missing');},async getFileHandle(){throw Error('missing');}};await assert.rejects(findGameFolder(handle),/not found/);assert.deepEqual(tried,['baseq3','Quake 3 Arena','common','steamapps']);});
