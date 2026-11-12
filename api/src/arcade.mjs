@@ -54,7 +54,7 @@ export function installArcadeSocket(server,{db,config}) {
      upstream.on('message',data=>{if(client.bufferedAmount>524288)return stop();if(client.readyState===WebSocket.OPEN)client.send(data,{binary:false});});
     });
    });
-  }catch{if(!socket.destroyed)socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');}
+  }catch{if(!socket.destroyed)socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');}
  });
  server.closeArcadeSockets=()=>{for(const c of clients)c.terminate();};
  server.on('close',()=>{server.closeArcadeSockets();wss.close();});

@@ -86,7 +86,7 @@ export function createArcade({authorized}) {
      }catch{stop();}
     });
    });
-  }catch{socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');}
+  }catch{socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');}
   return true;
  }
  const timer=setInterval(()=>{for(const p of pools.values())p.sweep();for(const rt of simulations.values())if(rt.sim)for(const p of rt.peers.values())if(Date.now()-p.seen>1500)rt.sim.setInput(rt.state,p.id,cleanInput());},1000);timer.unref();

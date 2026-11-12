@@ -1,3 +1,4 @@
+import {WebSocket} from 'ws';
 import {test,before,after,beforeEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPair,SignJWT,jwtVerify} from 'jose';
@@ -101,4 +102,14 @@ test('registered website callback is used consistently for Google authorization 
  assert.throws(()=>configuration({GOOGLE_REDIRECT_URI:'https://attacker.example.test/callback'}),/Invalid Google callback/);
  const previous=config.googleRedirectUri;config.googleRedirectUri=alternate.googleRedirectUri;
  try{const login=await start();assert.equal(login.query.get('redirect_uri'),alternate.googleRedirectUri);assert.equal((await complete(login)).status,302);assert.equal(exchange.redirect_uri,alternate.googleRedirectUri);}finally{config.googleRedirectUri=previous;}
+});
+
+test('rejected WebSocket upgrades have explicit zero-length HTTP response framing',async()=>{
+ for(const path of ['/v1/quake3/socket','/v1/arcade/duck-game/socket'])for(const requestOrigin of [config.appOrigin,'https://untrusted.example']){
+  await new Promise((resolve,reject)=>{
+   const ws=new WebSocket(origin.replace('http:','ws:')+path,['json'],{origin:requestOrigin,handshakeTimeout:2000});
+   ws.on('error',()=>{});ws.once('open',()=>{ws.terminate();reject(Error('Unauthenticated socket opened'))});
+   ws.once('unexpected-response',(req,res)=>{try{assert.equal(res.statusCode,403);assert.equal(res.headers['content-length'],'0');res.resume();req.destroy();resolve();}catch(e){req.destroy();reject(e)}});
+  });
+ }
 });
