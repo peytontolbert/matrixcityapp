@@ -5,6 +5,7 @@ import {connect,cleanup} from './db.mjs';
 import {currentUser,startLogin,finishLogin} from './auth.mjs';
 import {check,cookie,cookieName,hash,setCookie,send} from './security.mjs';
 import {clientKey,limit} from './limits.mjs';
+import {quake3Route,installQuake3Socket} from './quake3.mjs';
 export function createServer({db,config,verify,fetcher}){
  const server=http.createServer({maxHeaderSize:16384},async(req,res)=>{
   res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Security-Policy',"default-src 'none'; frame-ancestors 'none'");
@@ -23,6 +24,7 @@ export function createServer({db,config,verify,fetcher}){
    if(path==='/health'&&req.method==='GET'){await db.query('SELECT 1');send(res,200,{ok:true,service:'matrixgames-accounts'});return;}
    await limit(db,'requests:global',1200,60);
    const key=clientKey(req,config);await limit(db,'requests:'+key,120,60);
+   if(await quake3Route(req,res,{db,config,url}))return;
    if(path==='/v1/config'&&req.method==='GET'){send(res,200,{googleEnabled:Boolean(config.googleClientId&&config.googleClientSecret),loginUrl:config.apiOrigin+'/auth/google/start'});return;}
    if(path==='/v1/me'&&req.method==='GET'){send(res,200,{user:await currentUser(db,req,config)||null});return;}
    if(path==='/auth/google/start'&&req.method==='GET'){
@@ -42,6 +44,7 @@ export function createServer({db,config,verify,fetcher}){
   }catch(e){if(e.retryAfter)res.setHeader('Retry-After',String(e.retryAfter));send(res,e.status||500,{error:e.status?e.message:'Account service unavailable'});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;server.keepAliveTimeout=5000;
+ installQuake3Socket(server,{db,config});
  return server;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
@@ -49,5 +52,5 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const db=connect(config.databaseUrl);await db.query('SELECT 1');
  const server=createServer({db,config});server.listen(config.port,'127.0.0.1',()=>console.log('Matrix Games account service ready'));
  const timer=setInterval(()=>cleanup(db).catch(()=>console.error('Account cleanup failed')),300000);timer.unref();
- const stop=()=>{clearInterval(timer);server.close(()=>db.end().then(()=>process.exit(0)));};process.once('SIGTERM',stop);process.once('SIGINT',stop);
+ const stop=()=>{clearInterval(timer);server.closeQuake3Sockets();server.close(()=>db.end().then(()=>process.exit(0)));};process.once('SIGTERM',stop);process.once('SIGINT',stop);
 }

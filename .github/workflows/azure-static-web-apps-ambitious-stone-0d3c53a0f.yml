@@ -35,6 +35,8 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y clang-18 lld-18
       - run: npm ci --prefix api --ignore-scripts
       - run: npm test --prefix api
+      - run: npm ci --prefix games --ignore-scripts
+      - run: npm test --prefix games
       - run: npm run check:public
       - run: npm run build
       - run: npm test

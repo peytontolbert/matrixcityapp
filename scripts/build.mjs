@@ -1,6 +1,7 @@
 import {mkdir,copyFile,readdir,readFile} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {buildQuake3} from './build-quake3.mjs';
 const output=resolve(process.env.MATRIXCITY_BUILD_DIR||'dist');
 await mkdir(join(output,'assets'),{recursive:true});
 const compiler=process.env.CLANG||'clang-18';
@@ -15,3 +16,4 @@ await copyFile('staticwebapp.config.json',join(output,'staticwebapp.config.json'
 const bytes=await readFile(join(output,'assets/city.wasm'));
 if(!WebAssembly.validate(bytes))throw Error('Invalid WASM build');
 console.log(`Built static site; WASM core ${bytes.length} bytes`);
+await buildQuake3(output);

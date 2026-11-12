@@ -1,0 +1,35 @@
+[Unit]
+Description=Matrix Games private Quake III rooms
+After=network.target
+
+[Service]
+Type=simple
+User=matrixgames-quake3
+Group=matrixgames-quake3
+WorkingDirectory=/opt/matrixgames/current/games
+EnvironmentFile=/etc/matrixgames-quake3/production.env
+ExecStart=/usr/bin/node server.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+StateDirectory=matrixgames-quake3
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+LockPersonality=true
+CapabilityBoundingSet=
+MemoryMax=2G
+TasksMax=96
+CPUQuota=200%
+LimitNOFILE=2048
+
+[Install]
+WantedBy=multi-user.target
