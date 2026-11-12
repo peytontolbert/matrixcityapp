@@ -58,7 +58,7 @@ export function createGameService({key,launch}){
  return {server,rooms,arcade};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
- const {server,rooms}=createGameService({key:process.env.QUAKE3_SERVICE_KEY,launch:config=>launchEngine(config,{binary:process.env.QUAKE3_BINARY,assets:process.env.QUAKE3_ASSETS,state:process.env.QUAKE3_STATE||'/var/lib/matrixgames-quake3/rooms'})});
+ const {server,rooms,arcade}=createGameService({key:process.env.QUAKE3_SERVICE_KEY,launch:config=>launchEngine(config,{binary:process.env.QUAKE3_BINARY,assets:process.env.QUAKE3_ASSETS,state:process.env.QUAKE3_STATE||'/var/lib/matrixgames-quake3/rooms'})});
  server.listen(Number(process.env.PORT||4191),'127.0.0.1',()=>console.log('Quake III room service ready'));
- const stop=()=>{rooms.stop();server.close(()=>process.exit(0));};process.once('SIGTERM',stop);process.once('SIGINT',stop);
+ const stop=()=>{rooms.stop();arcade.stop();server.close(()=>process.exit(0));};process.once('SIGTERM',stop);process.once('SIGINT',stop);
 }
