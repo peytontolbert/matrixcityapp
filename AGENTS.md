@@ -10,7 +10,7 @@ GitHub Actions workflow; never copy credentials into the frontend.
 
 The current city preview is a small standalone WASM demo, not the LANParty game.
 Port LANParty features deliberately with provenance and permission checks.
-OAuth belongs on a separate private VPS backend. No account backend is enabled.
+OAuth belongs on a separate private VPS backend. The account API source lives in `api/`; deployment and secrets stay on the VPS.
 
 On the development host, use the shared project temporary-storage wrapper named
 in the workspace instructions. Keep durable source here and disposable builds,
