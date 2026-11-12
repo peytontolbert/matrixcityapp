@@ -7,5 +7,7 @@ export function configuration(env=process.env){
   if(u.origin!==value||u.username||u.password||!(u.protocol==='https:'||!production&&u.protocol==='http:'&&['localhost','127.0.0.1'].includes(u.hostname)))throw Error('Invalid account origin');
  }
  const port=Number(env.PORT||4190);if(!Number.isInteger(port)||port<1||port>65535)throw Error('Invalid account port');
- return {production,port,appOrigin,apiOrigin,googleRedirectUri:apiOrigin+'/api/callback',googleClientId:env.GOOGLE_CLIENT_ID||'',googleClientSecret:env.GOOGLE_CLIENT_SECRET||'',databaseUrl:env.DATABASE_URL,allowedOrigins:new Set([appOrigin,...(production?['https://www.matrixgames.app']:[])]),trustCloudflareProxy:production};
+ const googleRedirectUri=env.GOOGLE_REDIRECT_URI||apiOrigin+'/api/callback';
+ if(![apiOrigin+'/api/callback',appOrigin+'/api/callback'].includes(googleRedirectUri))throw Error('Invalid Google callback');
+ return {production,port,appOrigin,apiOrigin,googleRedirectUri,googleClientId:env.GOOGLE_CLIENT_ID||'',googleClientSecret:env.GOOGLE_CLIENT_SECRET||'',databaseUrl:env.DATABASE_URL,allowedOrigins:new Set([appOrigin,...(production?['https://www.matrixgames.app']:[])]),trustCloudflareProxy:production};
 }
