@@ -34,7 +34,9 @@ output directory, not the repository. `HOST` and `PORT` configure preview bindin
 The Azure Static Web App is connected to this repository. The active workflow is
 `.github/workflows/azure-static-web-apps-ambitious-stone-0d3c53a0f.yml`.
 It installs Clang 18 and lld, builds the frontend and WASM, runs the tests, and
-deploys the resulting `dist/` directory using the existing Azure GitHub secret.
+deploys the resulting `dist/` directory using the existing Azure GitHub secret
+and GitHub deployment identity. Only the production deployment job can request
+an identity token; pull-request builds have read-only repository permissions.
 
 `dist/` is generated, ignored by Git, and uploaded as a workflow artifact named
 `matrixcity-static`. Its absence in the repository is expected. For a local build,
