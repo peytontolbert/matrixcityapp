@@ -71,3 +71,9 @@ test('proxy identity is trusted only over loopback and IPv6 /64 shares a quota',
  assert.equal(clientKey(request('203.0.113.4','198.51.100.2'),config),hash('203.0.113.4'));
  assert.equal(clientKey(request('127.0.0.1','2001:db8:1:2::1'),config),clientKey(request('127.0.0.1','2001:db8:1:2::99'),config));
 });
+test('registered website callback is used consistently for Google authorization and exchange',async()=>{
+ const alternate=configuration({NODE_ENV:'production',GOOGLE_REDIRECT_URI:'https://matrixgames.app/api/callback'});
+ assert.throws(()=>configuration({GOOGLE_REDIRECT_URI:'https://attacker.example.test/callback'}),/Invalid Google callback/);
+ const previous=config.googleRedirectUri;config.googleRedirectUri=alternate.googleRedirectUri;
+ try{const login=await start();assert.equal(login.query.get('redirect_uri'),alternate.googleRedirectUri);assert.equal((await complete(login)).status,302);assert.equal(exchange.redirect_uri,alternate.googleRedirectUri);}finally{config.googleRedirectUri=previous;}
+});

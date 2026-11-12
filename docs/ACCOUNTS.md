@@ -5,13 +5,16 @@ the service on loopback port 4190. Cloudflare's `api.matrixgames.app` published
 application forwards HTTP to `127.0.0.1:4190`.
 
 Create a Google OAuth Web application client and register exactly
-`https://api.matrixgames.app/api/callback`. The API performs the code exchange
-directly; no Azure callback relay is needed. Only `openid email profile` is used.
+`https://matrixgames.app/api/callback`. Azure serves a no-store, no-referrer
+callback page that forwards only bounded code/state/error fields to the fixed
+VPS endpoint. The API performs the code exchange using the registered website
+callback URI. Only `openid email profile` is used.
 No Google JavaScript library or client secret is sent to the browser.
 
 Runtime variables: NODE_ENV=production, PORT=4190,
 APP_ORIGIN=https://matrixgames.app, API_ORIGIN=https://api.matrixgames.app,
-DATABASE_URL, GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET. Keep the last three in
+GOOGLE_REDIRECT_URI=https://matrixgames.app/api/callback, DATABASE_URL,
+GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET. Keep the last three in
 root-only VPS configuration, never in repository files or GitHub Actions.
 An API with missing Google credentials reports sign-in unavailable.
 
