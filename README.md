@@ -31,17 +31,23 @@ output directory, not the repository. `HOST` and `PORT` configure preview bindin
 
 ## Azure deployment
 
-Create an Azure Static Web App using the Free plan and an external deployment
-source (Other). Add its deployment token as the GitHub Actions repository secret
-`AZURE_STATIC_WEB_APPS_API_TOKEN`. Run the workflow or push to `main`.
+The Azure Static Web App is connected to this repository. The active workflow is
+`.github/workflows/azure-static-web-apps-ambitious-stone-0d3c53a0f.yml`.
+It installs Clang 18 and lld, builds the frontend and WASM, runs the tests, and
+deploys the resulting `dist/` directory using the existing Azure GitHub secret.
 
-The workflow compiles and tests before publishing `dist`. It deliberately reports
-a build-only result when the deployment secret is absent. Pull requests validate
-the build without deploying untrusted code to production. No token belongs in Git.
+`dist/` is generated, ignored by Git, and uploaded as a workflow artifact named
+`matrixcity-static`. Its absence in the repository is expected. For a local build,
+run `npm run build`; CI performs that same build on every push and pull request.
 
-After the Azure hostname is assigned, add the intended custom domain in Azure and
-apply the exact validation/DNS records provided there. HTTPS must be active before
-connecting accounts. See [Azure custom domains](https://learn.microsoft.com/azure/static-web-apps/custom-domain).
+Deployment uses `app_location: dist`, `output_location: ''`, and
+`skip_app_build: true` because compilation has already finished before the Azure
+upload action. Only `main` publishes to production. Pull requests run the build
+and checks without deploying. A missing deployment secret fails publication.
+
+The public domain is **matrixgames.app**; the repository remains `matrixcityapp`.
+Domain and DNS setup are managed separately in Azure. See
+[Azure custom domains](https://learn.microsoft.com/azure/static-web-apps/custom-domain).
 
 ## Future integrations
 
