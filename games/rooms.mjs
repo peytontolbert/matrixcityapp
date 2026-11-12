@@ -11,7 +11,7 @@ export function settings(input={}){
  if(out.mode===1)out.players=2;return out;
 }
 export class Rooms {
- constructor({launch,now=()=>Date.now(),maxRooms=4}){this.launch=launch;this.now=now;this.maxRooms=maxRooms;this.rooms=new Map();this.tickets=new Map();this.pending=new Set();}
+ constructor({launch,now=()=>Date.now(),maxRooms=4,validateSettings=settings}){this.validateSettings=validateSettings;this.launch=launch;this.now=now;this.maxRooms=maxRooms;this.rooms=new Map();this.tickets=new Map();this.pending=new Set();}
  cleanCode(value){fail(typeof value==='string'&&/^[A-F0-9]{16}$/.test(value.toUpperCase()),400,'Enter a valid invite code');return value.toUpperCase();}
  view(room,actor){return {code:room.code,settings:room.settings,host:room.owner===actor,players:room.members.size,connected:room.connections.size,expiresAt:room.expiresAt};}
  member(actor,code){const room=this.rooms.get(this.cleanCode(code));fail(room,404,'Room is closed or does not exist');fail(room.members.has(actor),403,'Join this room first');return room;}
@@ -21,7 +21,7 @@ export class Rooms {
   if(action==='create'){
    fail(!this.pending.has(actor)&&![...this.rooms.values()].some(r=>r.owner===actor),409,'You already host a room');
    fail(this.rooms.size+this.pending.size<this.maxRooms,503,'All game servers are busy. Try again shortly');
-   const config=settings(input);this.pending.add(actor);let engine;
+   const config=this.validateSettings(input);this.pending.add(actor);let engine;
    try{
     engine=await this.launch(config);
     const room={code:randomBytes(8).toString('hex').toUpperCase(),owner:actor,settings:config,members:new Map([[actor,this.now()]]),connections:new Map(),engine,expiresAt:this.now()+4*3600000,lastActive:this.now()};
