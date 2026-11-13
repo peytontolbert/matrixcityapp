@@ -1,0 +1,1062 @@
+diff --git a/AssettoServer.Shared/Model/IEntryCar.cs b/AssettoServer.Shared/Model/IEntryCar.cs
+index b013700..db00c6c 100644
+--- a/AssettoServer.Shared/Model/IEntryCar.cs
++++ b/AssettoServer.Shared/Model/IEntryCar.cs
+@@ -1,4 +1,4 @@
+-﻿namespace AssettoServer.Shared.Model;
++namespace AssettoServer.Shared.Model;
+ 
+ public interface IEntryCar<out TClient> where TClient : IClient
+ {
+@@ -9,5 +9,7 @@ public interface IEntryCar<out TClient> where TClient : IClient
+     public CarStatus Status { get; }
+     public TClient? Client { get; }
+     public bool AiControlled { get; }
++    public bool ExternalActive => false;
++    public string? ExternalName => null;
+     public string? AiName { get; }
+ }
+diff --git a/AssettoServer.Shared/Network/Packets/Outgoing/DriverInfoUpdate.cs b/AssettoServer.Shared/Network/Packets/Outgoing/DriverInfoUpdate.cs
+index a761e52..0d3c9c4 100644
+--- a/AssettoServer.Shared/Network/Packets/Outgoing/DriverInfoUpdate.cs
++++ b/AssettoServer.Shared/Network/Packets/Outgoing/DriverInfoUpdate.cs
+@@ -1,4 +1,4 @@
+-﻿using AssettoServer.Shared.Model;
++using AssettoServer.Shared.Model;
+ 
+ namespace AssettoServer.Shared.Network.Packets.Outgoing;
+ 
+@@ -14,7 +14,7 @@ public class DriverInfoUpdate : IOutgoingNetworkPacket
+         foreach(var car in ConnectedCars)
+         {
+             writer.Write(car.SessionId);
+-            writer.WriteUTF32String(car.AiControlled ? car.AiName : car.Client?.Name);
++            writer.WriteUTF32String(car.ExternalActive ? car.ExternalName : car.AiControlled ? car.AiName : car.Client?.Name);
+         }
+     }
+ }
+diff --git a/AssettoServer.Tests/MatrixBridgeTests.cs b/AssettoServer.Tests/MatrixBridgeTests.cs
+new file mode 100644
+index 0000000..42c5abf
+--- /dev/null
++++ b/AssettoServer.Tests/MatrixBridgeTests.cs
+@@ -0,0 +1,87 @@
++using AssettoServer.Server;
++using NUnit.Framework;
++using System.Text.Json;
++
++namespace AssettoServer.Tests;
++
++public class MatrixBridgeTests
++{
++    [Test] public void ConfigurationAcceptsNumericSlotArray()
++    {
++        var settings=JsonSerializer.Deserialize<MatrixBridgeSettings>(
++            "{\"room\":\"nohesi-110\",\"revision\":\"test-r1\",\"tokenFile\":\"/private/bridge.token\",\"slots\":[4,5,15]}",
++            new JsonSerializerOptions(JsonSerializerDefaults.Web));
++        Assert.That(settings!.Slots,Is.EqualTo(new[]{4,5,15}));
++        Assert.That(new MatrixFrameGate(settings.Room,settings.Revision,settings.Slots)
++            .Accept(Frame() with {Vehicles=[Frame().Vehicles[0] with {Slot=4}]},Now),Is.True);
++    }
++    private const long Now = 10000;
++    private static MatrixFrame Frame() => new(1, "nohesi-110", "test-r1", Guid.NewGuid().ToString(), 1, Now,
++        [new MatrixVehicle(16, "browser:one", "Browser driver", [1,2,3], [0,0,0], [0,0,0])]);
++    private static MatrixFrameGate Gate() => new("nohesi-110", "test-r1", [16,17]);
++
++    [Test] public void AcceptsValidFrame() => Assert.That(Gate().Accept(Frame(), Now), Is.True);
++    [Test] public void ScoreFramesRejectSpoofedSlotsAndUnboundedData()
++    {
++        var score=new MatrixScore(0,Guid.NewGuid().ToString(),100,1,1,1,[new MatrixLeader(1,"Driver ABCDEF",100,1)]);
++        Assert.That(Gate().Accept(Frame() with {Scores=[score]},Now),Is.True);
++        Assert.That(Gate().Accept(Frame() with {Scores=[score with {Slot=16}]},Now),Is.False);
++        Assert.That(Gate().Accept(Frame() with {Scores=[score with {Combo=float.NaN}]},Now),Is.False);
++        Assert.That(Gate().Accept(Frame() with {Scores=[score,score]},Now),Is.False);
++        Assert.That(Gate().Accept(Frame() with {Scores=[score with {Leaders=[new MatrixLeader(1,"<script>",100,1)]}]},Now),Is.False);
++    }
++    [Test] public void CoupledImpactsRequireAccountAndNativeSlot()
++    {
++        var impact=new MatrixImpact(0,Guid.NewGuid().ToString(),[2,0,-1]);
++        Assert.That(Gate().Accept(Frame() with {Impacts=[impact]},Now),Is.True);
++        Assert.That(Gate().Accept(Frame() with {Impacts=[impact with {Slot=16}]},Now),Is.False);
++        Assert.That(Gate().Accept(Frame() with {Impacts=[impact with {Account="anonymous"}]},Now),Is.False);
++        Assert.That(Gate().Accept(Frame() with {Impacts=[impact,impact]},Now),Is.False);
++        Assert.That(Gate().Accept(Frame() with {Impacts=[impact with {Delta=[80,80,80]}]},Now),Is.False);
++        Assert.That(Gate().Accept(Frame() with {Impacts=[impact with {Delta=[float.NaN,0,0]}]},Now),Is.False);
++    }
++    [Test] public void DeniesNativeSlotInjection()
++    {
++        var f=Frame(); Assert.That(Gate().Accept(f with { Vehicles=[f.Vehicles[0] with { Slot=0 }] }, Now), Is.False);
++    }
++    [Test] public void DeniesDuplicateSlots()
++    {
++        var f=Frame(); Assert.That(Gate().Accept(f with { Vehicles=[f.Vehicles[0], f.Vehicles[0] with {Entity="browser:two"}] }, Now), Is.False);
++    }
++    [Test] public void DeniesDuplicateEntities()
++    {
++        var f=Frame(); Assert.That(Gate().Accept(f with { Vehicles=[f.Vehicles[0], f.Vehicles[0] with {Slot=17}] }, Now), Is.False);
++    }
++    [TestCase("nohesi-415", "test-r1")]
++    [TestCase("nohesi-110", "wrong")]
++    public void DeniesOtherWorld(string room, string revision) =>
++        Assert.That(Gate().Accept(Frame() with { Room=room, Revision=revision }, Now), Is.False);
++    [Test] public void DeniesNonFinitePose()
++    {
++        var f=Frame(); Assert.That(Gate().Accept(f with { Vehicles=[f.Vehicles[0] with { Position=[float.NaN,0,0] }] }, Now), Is.False);
++    }
++    [Test] public void DeniesReplay()
++    {
++        var gate=Gate(); var f=Frame(); Assert.That(gate.Accept(f,Now),Is.True);
++        Assert.That(gate.Accept(f,Now+100),Is.False);
++    }
++    [Test] public void DeniesStaleAndFutureFrames()
++    {
++        Assert.That(Gate().Accept(Frame() with { IssuedAt=Now-2001 },Now),Is.False);
++        Assert.That(Gate().Accept(Frame() with { IssuedAt=Now+1001 },Now),Is.False);
++    }
++    [Test] public void OwnerCannotBeReplacedUntilLeaseExpires()
++    {
++        var gate=Gate(); Assert.That(gate.Accept(Frame(),Now),Is.True);
++        Assert.That(gate.Accept(Frame() with { IssuedAt=Now+100 },Now+100),Is.False);
++        Assert.That(gate.Accept(Frame() with { IssuedAt=Now+3000 },Now+3000),Is.True);
++    }
++    [Test] public void RateLimitDoesNotBlockNextValidFrame()
++    {
++        var gate=Gate(); var f=Frame(); Assert.That(gate.Accept(f,Now),Is.True);
++        Assert.That(gate.Accept(f with {Sequence=2},Now+1),Is.False);
++        Assert.That(gate.Accept(f with {Sequence=2},Now+50),Is.True);
++    }
++    [Test] public void EmptySnapshotRemovesAllExternalCars() =>
++        Assert.That(Gate().Accept(Frame() with { Vehicles=[] },Now),Is.True);
++}
+diff --git a/AssettoServer.Tests/MatrixNativeAdmissionTests.cs b/AssettoServer.Tests/MatrixNativeAdmissionTests.cs
+new file mode 100644
+index 0000000..62a42dc
+--- /dev/null
++++ b/AssettoServer.Tests/MatrixNativeAdmissionTests.cs
+@@ -0,0 +1,32 @@
++using System;
++using System.Security.Cryptography;
++using System.Text;
++using AssettoServer.Server;
++using NUnit.Framework;
++namespace AssettoServer.Tests;
++public class MatrixNativeAdmissionTests
++{
++    const string Actor="11111111-1111-4111-8111-111111111111",Key="test-only-native-admission-key",Model="06_ygt_53_nissan_350z";
++    const ulong Steam=76561198000000000;
++    static string Url(byte[] v)=>Convert.ToBase64String(v).TrimEnd('=').Replace('+','-').Replace('/','_');
++    static string Ticket(string nonce="aaaaaaaaaaaaaaaa",long expires=190,string room="nohesi-110"){
++        var payload=Url(Encoding.UTF8.GetBytes(Actor+"|"+Steam+"|"+expires+"|"+nonce));
++        return "mg1."+payload+"."+Url(HMACSHA256.HashData(Encoding.UTF8.GetBytes(Key),Encoding.UTF8.GetBytes(room+"|"+payload)));
++    }
++    [Test] public void AcceptsOnceAndReservesAccountUntilDisconnect(){
++        var gate=new MatrixNativeAdmission("nohesi-110",Key);
++        Assert.That(gate.Accept(Steam,Model,Ticket(),100,out var actor),Is.True);Assert.That(actor,Is.EqualTo(Actor));
++        Assert.That(gate.Accept(Steam,Model,Ticket(),100,out _),Is.False);
++        Assert.That(gate.Accept(Steam,Model,Ticket("bbbbbbbbbbbbbbbb"),100,out _),Is.False);
++        gate.Release(Actor);Assert.That(gate.Accept(Steam,Model,Ticket("bbbbbbbbbbbbbbbb"),100,out _),Is.True);
++    }
++    [Test] public void RejectsAnonymousWrongSteamWrongRoomExpiryAndTampering(){
++        var gate=new MatrixNativeAdmission("nohesi-110",Key);
++        Assert.That(gate.Accept(Steam,Model,"",100,out _),Is.False);
++        Assert.That(gate.Accept(Steam+1,Model,Ticket(),100,out _),Is.False);
++        Assert.That(gate.Accept(Steam,Model,Ticket(room:"nohesi-415"),100,out _),Is.False);
++        Assert.That(gate.Accept(Steam,Model,Ticket(expires:99),100,out _),Is.False);
++        Assert.That(gate.Accept(Steam,Model,Ticket()+"x",100,out _),Is.False);
++        Assert.That(gate.Accept(Steam,"other-car",Ticket(),100,out _),Is.False);
++    }
++}
+diff --git a/AssettoServer.Tests/matrix_hud_test.lua b/AssettoServer.Tests/matrix_hud_test.lua
+new file mode 100644
+index 0000000..63bc996
+--- /dev/null
++++ b/AssettoServer.Tests/matrix_hud_test.lua
+@@ -0,0 +1,14 @@
++local callback,event,key=false,nil,false
++local texts={};local disposed=false
++rgbm=function(...)return {...}end;vec2=function(x,y)return {x=x,y=y}end
++local car={speedKmh=123.4,rpm=5200,rpmLimiter=7000,gear=4}
++ac={StructItem={key=function(x)return x end,int32=function()end,float=function()end,string=function()end},getCar=function()return car end,getUI=function()return {windowSize=vec2(1920,1080)}end,OnlineEvent=function(_,fn)event=fn end}
++ui={KeyIndex={F7=118},keyPressed=function()local v=key;key=false;return v end,drawCircleFilled=function()end,drawLine=function()end,dwriteDrawText=function(t)table.insert(texts,t)end,onExclusiveHUD=function(fn)callback=fn;return {dispose=function()disposed=true end}end}
++script={};dofile('AssettoServer/Server/Lua/matrix_hud.lua')
++assert(callback('pause')==nil);assert(callback('game')==true);assert(table.concat(texts,'|'):find('123'));assert(table.concat(texts,'|'):find('4'))
++assert(not table.concat(texts,'|'):find('Connecting'));assert(table.concat(texts,'|'):find('SCORE UPDATES UNAVAILABLE'))
++event(nil,{score=250,combo=1.5,passes=3,rank=1,first='Driver ABCDEF',firstScore=250});texts={};callback('game');assert(table.concat(texts,'|'):find('250'))
++assert(table.concat(texts,'|'):find('ROOM BEST'));assert(not table.concat(texts,'|'):find('UNAVAILABLE'))
++script.update(4);texts={};callback('game');assert(table.concat(texts,'|'):find('250'));assert(table.concat(texts,'|'):find('SCORE UPDATES UNAVAILABLE'))
++key=true;assert(callback('game')==nil);key=true;assert(callback('game')==true);script.release();assert(disposed)
++print('Native HUD speed/gear/score, pause and restore passed')
+diff --git a/AssettoServer.Tests/matrix_physics_test.lua b/AssettoServer.Tests/matrix_physics_test.lua
+new file mode 100644
+index 0000000..654cbf0
+--- /dev/null
++++ b/AssettoServer.Tests/matrix_physics_test.lua
+@@ -0,0 +1,38 @@
++-- Execute the actual companion against the documented CSP surface. No game needed.
++local vector={};vector.__index=vector
++local function v(x,y,z)return setmetatable({x=x,y=y,z=z},vector)end
++function vector.__add(a,b)return v(a.x+b.x,a.y+b.y,a.z+b.z)end
++function vector.__sub(a,b)return v(a.x-b.x,a.y-b.y,a.z-b.z)end
++function vector.__mul(a,b)return v(a.x*b,a.y*b,a.z*b)end
++function vector:dot(b)return self.x*b.x+self.y*b.y+self.z*b.z end
++function vector:lengthSquared()return self:dot(self)end
++function vector:length()return math.sqrt(self:lengthSquared())end
++local cars={};for i=0,2 do cars[i]={index=i,sessionID=i,position=v(0,.4,0),up=v(0,1,0),velocity=v(0,0,0),transform={position=v(0,.4,0)},bodyTransform={position=v(0,.4,0)},wheels={}};cars[i].id=function()return 'nohesi_traffic_toyota_prius' end;for w=0,3 do cars[i].wheels[w]={load=1000,contactPoint=v(0,0,0)}end end
++local events,reports,disabled={}, {}, {};local changes=0;local carReads=0
++ac={StructItem={key=function(k)return {key=k}end},getSim=function()return {carsCount=3,directMessagingAvailable=true}end,getCar=function(i)carReads=carReads+1;return assert(cars[i])end,getPatchVersionCode=function()return 3465 end,log=function()end}
++for _,name in ipairs({'byte','boolean','vec3','float','int32'})do ac.StructItem[name]=function()return name end end
++ac.OnlineEvent=function(layout,callback)local name=layout[1].key;assert(type(callback)=='function');events[name]=callback;return function(data,repeatFlag,target)assert(target==255,'Telemetry must be server-targeted');reports[name]=data;return true end end
++physics={allowed=function()return true end,disableCarCollisions=function(index,disable)disabled[index]=disable end,setCarVelocity=function(index,velocity)assert(index==0);cars[0].velocity=velocity;changes=changes+1 end}
++script={};local f=assert(io.open(arg[1]));local source=f:read('*a');f:close();assert(load(source:gsub('__MATRIX_SLOTS__','{1,2}'),'matrix_physics'))()
++script.update(.1);assert(reports.MG_PhysicsState_v1.ready);assert(reports.MG_PhysicsState_v1.feet.y==0);assert(disabled[1]==false)
++local receive=events.MG_PhysicsImpulse_v1
++receive(cars[1],{sequence=1,delta=v(3,0,0)});assert(changes==0,'Client spoof must be rejected')
++receive(nil,{sequence=1,delta=v(3,0,0)});script.update(.1);assert(changes==1 and disabled[1]==true and reports.MG_PhysicsState_v1.ack==1)
++receive(nil,{sequence=1,delta=v(3,0,0)});assert(changes==1,'Duplicate impulse must be rejected')
++receive(nil,{sequence=2,delta=v(81,0,0)});assert(changes==1,'Unbounded impulse must be rejected')
++script.update(.8);assert(disabled[1]==false,'Expired lease must restore native collision handling')
++receive(nil,{sequence=3,delta=v(0,0,0)});script.update(.1);assert(disabled[1]);script.release();assert(disabled[1]==false)
++print('Native companion: grounded telemetry, server-only impulses, replay rejection and lease restoration passed')
++
++assert(reports.MG_PoseCalibration_v1==nil,'Production must never calibrate or send calibration packets')
++local before=carReads;for i=1,60 do script.update(1/60)end
++assert(carReads-before<=93,'Car index refresh must not run every render frame')
++-- A deliberately different visual body origin catches the old double-lift formula.
++for i=1,2 do cars[i].transform.position=v(0,10,0);cars[i].bodyTransform.position=v(0,9.3,0)
++  for w=0,3 do cars[i].wheels[w].position=v(0,9.8,0);cars[i].wheels[w].tyreRadius=.3 end
++end
++assert(load(source:gsub('__MATRIX_SLOTS__','{1,2}'):gsub('__MATRIX_CALIBRATION__','true'),'matrix_physics_calibration'))()
++script.update(.1)
++assert(math.abs(reports.MG_PoseCalibration_v1.offset-.5)<.00001,'Calibration must use physics origin to tyre bottoms')
++print('Native performance: bounded car scans, no production calibration, correct wheel-bottom calibration passed')
++
+diff --git a/AssettoServer/AssettoServer.csproj b/AssettoServer/AssettoServer.csproj
+index a820b0d..a68945d 100644
+--- a/AssettoServer/AssettoServer.csproj
++++ b/AssettoServer/AssettoServer.csproj
+@@ -1,4 +1,4 @@
+-﻿<Project Sdk="Microsoft.NET.Sdk">
++<Project Sdk="Microsoft.NET.Sdk">
+ 
+     <PropertyGroup>
+         <OutputType>Exe</OutputType>
+@@ -64,7 +64,7 @@
+         <PackageReference Include="prometheus-net.AspNetCore" Version="8.2.1" />
+         <PackageReference Include="protobuf-net.Grpc" Version="1.2.2" />
+         <PackageReference Include="Qmmands" Version="5.0.2" />
+-        <PackageReference Include="Scriban" Version="6.6.0" />
++        <PackageReference Include="Scriban" Version="7.6.1" />
+         <PackageReference Include="Serilog" Version="4.3.1" />
+         <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+         <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
+@@ -142,6 +142,8 @@
+         <EmbeddedResource Include="Server\Ai\ai_debug.lua" />
+         <None Remove="Server\Lua\assettoserver.lua" />
+         <EmbeddedResource Include="Server\Lua\assettoserver.lua" />
++        <EmbeddedResource Include="Server\Lua\matrix_physics.lua" />
++        <EmbeddedResource Include="Server\Lua\matrix_hud.lua" />
+         <None Remove="Assets\logo_42.png" />
+         <EmbeddedResource Include="Assets\logo_42.png" />
+         <None Remove="Assets\srp-logo-new.png" />
+diff --git a/AssettoServer/Network/Http/HttpController.cs b/AssettoServer/Network/Http/HttpController.cs
+index 6f5511c..65b8cc0 100644
+--- a/AssettoServer/Network/Http/HttpController.cs
++++ b/AssettoServer/Network/Http/HttpController.cs
+@@ -105,10 +105,10 @@ public class HttpController : ControllerBase
+             {
+                 Model = ec.Model,
+                 Skin = ec.Skin,
+-                IsEntryList = isAdmin || await _openSlotFilter.IsSlotOpen(ec, ulongGuid),
+-                DriverName = ec.Client?.Name,
++                IsEntryList = !ec.ExternalReserved && (isAdmin || await _openSlotFilter.IsSlotOpen(ec, ulongGuid)),
++                DriverName = ec.ExternalName ?? ec.Client?.Name,
+                 DriverTeam = ec.Client?.Team,
+-                IsConnected = ec.Client != null
++                IsConnected = ec.Client != null || ec.ExternalActive
+             });
+         }
+         EntryListResponse responseObj = new EntryListResponse
+@@ -134,11 +134,11 @@ public class HttpController : ControllerBase
+             {
+                 Model = ec.Model,
+                 Skin = ec.Skin,
+-                IsEntryList = isAdmin || await _openSlotFilter.IsSlotOpen(ec, ulongGuid),
+-                DriverName = ec.Client?.Name,
++                IsEntryList = !ec.ExternalReserved && (isAdmin || await _openSlotFilter.IsSlotOpen(ec, ulongGuid)),
++                DriverName = ec.ExternalName ?? ec.Client?.Name,
+                 DriverTeam = ec.Client?.Team,
+                 DriverNation = ec.Client?.NationCode,
+-                IsConnected = ec.Client != null,
++                IsConnected = ec.Client != null || ec.ExternalActive,
+                 ID = ec.Client?.HashedGuid
+             });
+         }
+diff --git a/AssettoServer/Network/Http/MatrixBridgeController.cs b/AssettoServer/Network/Http/MatrixBridgeController.cs
+new file mode 100644
+index 0000000..b4a8f1f
+--- /dev/null
++++ b/AssettoServer/Network/Http/MatrixBridgeController.cs
+@@ -0,0 +1,28 @@
++using System.Text.Json;
++using System.Threading.Tasks;
++using AssettoServer.Server;
++using Microsoft.AspNetCore.Mvc;
++using Microsoft.AspNetCore.Http;
++
++namespace AssettoServer.Network.Http;
++
++[ApiController]
++public sealed class MatrixBridgeController(MatrixBridge bridge) : ControllerBase
++{
++    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { MaxDepth = 12 };
++    [HttpPost("/_matrix/bridge/v1/exchange")]
++    [RequestSizeLimit(131072)]
++    public async Task<IActionResult> Exchange()
++    {
++        // Never forwarded client identity: this is a loopback-only server-to-server endpoint.
++        if (!bridge.Authorized(HttpContext.Connection.RemoteIpAddress, Request.Headers.Authorization.ToString()))
++            return NotFound();
++        if (!Request.HasJsonContentType()) return BadRequest();
++        MatrixFrame? frame;
++        try { frame = await JsonSerializer.DeserializeAsync<MatrixFrame>(Request.Body, Json, HttpContext.RequestAborted); }
++        catch (JsonException) { return BadRequest(); }
++        if (frame == null) return BadRequest();
++        var snapshot = bridge.Exchange(frame);
++        return snapshot == null ? Conflict() : Content(JsonSerializer.Serialize(snapshot, Json), "application/json");
++    }
++}
+diff --git a/AssettoServer/Network/Tcp/ACTcpClient.cs b/AssettoServer/Network/Tcp/ACTcpClient.cs
+index 7c302a2..d1b7607 100644
+--- a/AssettoServer/Network/Tcp/ACTcpClient.cs
++++ b/AssettoServer/Network/Tcp/ACTcpClient.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Collections.Generic;
+ using System.Diagnostics.CodeAnalysis;
+ using System.IO;
+@@ -49,6 +49,7 @@ public class ACTcpClient : IClient
+     public bool IsDisconnectRequested => _disconnectRequested == 1;
+     [MemberNotNullWhen(true, nameof(Name), nameof(Team), nameof(NationCode))]
+     public bool HasSentFirstUpdate { get; private set; }
++    public string? MatrixAccountId { get; private set; }
+     public bool IsConnected { get; set; }
+     public TcpClient TcpClient { get; }
+ 
+@@ -245,7 +246,7 @@ public class ACTcpClient : IClient
+     {
+         SendPacket(new ApiKeyPacket { Key = ApiKey });
+         
+-        var connectedCars = _entryCarManager.EntryCars.Where(c => c.Client != null || c.AiControlled).ToList();
++        var connectedCars = _entryCarManager.EntryCars.Where(c => c.Client != null || c.AiControlled || c.ExternalActive).ToList();
+         foreach (var car in connectedCars)
+         {
+             if (!car.EnableCollisions)
+@@ -405,7 +406,9 @@ public class ACTcpClient : IClient
+                         SendPacket(new AuthFailedResponse("Assetto Corsa Pro is not supported on this server. Consider setting EnableACProSupport to true in extra_cfg.yml"));
+                     else if (await _blacklist.IsBlacklistedAsync(Guid))
+                         SendPacket(new BlacklistedResponse());
+-                    else if (_configuration.Server.Password?.Length > 0
++                    else if (MatrixBridgeSettings.Current != null && !AuthorizeMatrixAccount(handshakeRequest))
++                        SendPacket(new AuthFailedResponse("Sign in at matrixgames.app and download a fresh native join file."));
++                    else if (MatrixBridgeSettings.Current == null && _configuration.Server.Password?.Length > 0
+                              && handshakeRequest.Password != _configuration.Server.Password
+                              && !_configuration.Server.CheckAdminPassword(handshakeRequest.Password))
+                         SendPacket(new WrongPasswordResponse());
+@@ -856,7 +859,7 @@ public class ACTcpClient : IClient
+     {
+         try
+         {
+-            var connectedCars = _entryCarManager.EntryCars.Where(c => c.Client != null || c.AiControlled).ToList();
++            var connectedCars = _entryCarManager.EntryCars.Where(c => c.Client != null || c.AiControlled || c.ExternalActive).ToList();
+ 
+             SendPacket(new WelcomeMessage { Message = await _cspServerExtraOptions.GenerateWelcomeMessageAsync(this) });
+ 
+@@ -970,6 +973,12 @@ public class ACTcpClient : IClient
+         return true;
+     }
+ 
++    private bool AuthorizeMatrixAccount(HandshakeRequest request)
++    {
++        if(MatrixNativeAdmission.Current == null || !MatrixNativeAdmission.Current.Accept(request.Guid,request.RequestedCar,request.Password,DateTimeOffset.UtcNow.ToUnixTimeSeconds(),out var actor))return false;
++        MatrixAccountId=actor;return true;
++    }
++
+     internal async Task DisconnectAsync()
+     {
+         try
+@@ -1004,6 +1013,7 @@ public class ACTcpClient : IClient
+         {
+             Logger.Error(ex, "Error disconnecting {ClientName}", Name);
+         }
++        finally { MatrixNativeAdmission.Current?.Release(MatrixAccountId); MatrixAccountId=null; }
+     }
+ 
+     public void SendTeleportCarPacket(Vector3 position, Vector3 direction, Vector3 velocity = default)
+diff --git a/AssettoServer/Server/ACServer.cs b/AssettoServer/Server/ACServer.cs
+index 7eb15af..371ca78 100644
+--- a/AssettoServer/Server/ACServer.cs
++++ b/AssettoServer/Server/ACServer.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Linq;
+ using System.Threading;
+ using System.Threading.Tasks;
+@@ -238,7 +238,7 @@ public class ACServer : BackgroundService, IHostedLifecycleService
+                     }
+                 }
+ 
+-                if (_entryCarManager.ConnectedCars.Count > 0)
++                if (_entryCarManager.ConnectedCars.Count > 0 || MatrixBridgeSettings.Current != null)
+                 {
+                     long tickDelta;
+                     do
+diff --git a/AssettoServer/Server/EntryCarManager.cs b/AssettoServer/Server/EntryCarManager.cs
+index d29c974..d765352 100644
+--- a/AssettoServer/Server/EntryCarManager.cs
++++ b/AssettoServer/Server/EntryCarManager.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Collections.Concurrent;
+ using System.Collections.Generic;
+ using System.Linq;
+@@ -208,7 +208,7 @@ public class EntryCarManager
+             var isAdmin = await _adminService.IsAdminAsync(handshakeRequest.Guid);
+             foreach (var entryCar in candidates.OrderByDescending(x => x.AllowedGuids.Count))
+             {
+-                if (entryCar.Client == null && (isAdmin || await _openSlotFilterChain.Value.IsSlotOpen(entryCar, handshakeRequest.Guid)))
++                if (!entryCar.ExternalReserved && entryCar.Client == null && (isAdmin || await _openSlotFilterChain.Value.IsSlotOpen(entryCar, handshakeRequest.Guid)))
+                 {
+                     entryCar.Reset();
+                     entryCar.Client = client;
+diff --git a/AssettoServer/Server/EntryCarMatrix.cs b/AssettoServer/Server/EntryCarMatrix.cs
+new file mode 100644
+index 0000000..c2ebfa9
+--- /dev/null
++++ b/AssettoServer/Server/EntryCarMatrix.cs
+@@ -0,0 +1,55 @@
++using System;
++using System.Linq;
++using System.Numerics;
++using AssettoServer.Shared.Model;
++using AssettoServer.Shared.Network.Packets.Outgoing;
++
++namespace AssettoServer.Server;
++
++public partial class EntryCar
++{
++    // Reserved even while inactive: an administrator/native SLOT_INDEX join must not steal it.
++    public bool ExternalReserved => MatrixBridgeSettings.Current?.Slots.Contains(SessionId) == true;
++    public bool ExternalActive { get; private set; }
++    public string? ExternalName { get; private set; }
++    private string? _externalEntity;
++
++    internal void SetExternal(MatrixVehicle vehicle, long now)
++    {
++        if (!ExternalReserved || Client != null || AiControlled) throw new InvalidOperationException("External slot is not exclusive");
++        if (ExternalActive && _externalEntity != vehicle.Entity) ClearExternal();
++        // Publish a complete pose before advertising the car to native clients.
++        var status = new CarStatus
++        {
++            Position = new Vector3(vehicle.Position[0], vehicle.Position[1], vehicle.Position[2]),
++            Rotation = new Vector3(vehicle.Rotation[0], vehicle.Rotation[1], vehicle.Rotation[2]),
++            Velocity = new Vector3(vehicle.Velocity[0], vehicle.Velocity[1], vehicle.Velocity[2]),
++            Timestamp = now, PakSequenceId = unchecked((byte)(Status.PakSequenceId + 1)),
++            EngineRpm = vehicle.Rpm, Gear = vehicle.Gear, Gas = vehicle.Gas, SteerAngle = vehicle.Steer,
++            StatusFlag = (vehicle.Brake ? CarStatusFlags.BrakeLightsOn : 0) | (vehicle.Lights ? CarStatusFlags.LightsOn : 0)
++        };
++        Status = status;
++        HasUpdateToSend = true;
++        _externalEntity = vehicle.Entity;
++        ExternalName = vehicle.Name;
++        if (_sessionManager.CurrentSession.Results?.TryGetValue(SessionId, out var result) == true)
++            result.Name = vehicle.Name;
++        if (!ExternalActive)
++        {
++            ExternalActive = true;
++            _entryCarManager.BroadcastPacket(new CarConnected { SessionId = SessionId, Name = ExternalName, Nation = "" });
++        }
++    }
++
++    internal void ClearExternal()
++    {
++        if (!ExternalActive) return;
++        ExternalActive = false;
++        ExternalName = null;
++        _externalEntity = null;
++        HasUpdateToSend = false;
++        _entryCarManager.BroadcastPacket(new CarDisconnected { SessionId = SessionId });
++        if (_sessionManager.CurrentSession.Results?.TryGetValue(SessionId, out var result) == true) result.Name = "";
++        Reset();
++    }
++}
+diff --git a/AssettoServer/Server/Lua/matrix_hud.lua b/AssettoServer/Server/Lua/matrix_hud.lua
+new file mode 100644
+index 0000000..43c5e39
+--- /dev/null
++++ b/AssettoServer/Server/Lua/matrix_hud.lua
+@@ -0,0 +1,35 @@
++-- Session-only Matrix Games HUD. F7 restores the user's normal HUD immediately.
++local enabled=true
++local score,age={score=0,combo=1,passes=0,rank=0},100
++local hudText=rgbm(.91,.95,.96,1)
++local accent=rgbm(.75,.95,.4,1)
++ac.OnlineEvent({ac.StructItem.key('MG_DrivingScore_v1'),score=ac.StructItem.int32(),combo=ac.StructItem.float(),passes=ac.StructItem.int32(),rank=ac.StructItem.int32(),first=ac.StructItem.string(20),firstScore=ac.StructItem.int32(),second=ac.StructItem.string(20),secondScore=ac.StructItem.int32(),third=ac.StructItem.string(20),thirdScore=ac.StructItem.int32()},function(sender,data)
++  if sender~=nil then return end
++  score={score=data.score,combo=data.combo,passes=data.passes,rank=data.rank,first=data.first,firstScore=data.firstScore,second=data.second,secondScore=data.secondScore,third=data.third,thirdScore=data.thirdScore};age=0
++end)
++function script.update(dt) age=age+dt end
++local function text(value,size,x,y,color)ui.dwriteDrawText(tostring(value),size,vec2(x,y),color or hudText)end
++local function draw()
++ local car=ac.getCar(0);local size=ac.getUI().windowSize
++ local x,y=size.x-150,size.y-165
++ ui.drawCircleFilled(vec2(x,y),110,rgbm(.025,.045,.055,.92),64)
++ local rpm=math.max(0,math.min(1,car.rpm/math.max(1000,car.rpmLimiter)))
++ for i=0,47 do local angle=(135+i*270/47)*math.pi/180;local active=i/47<=rpm;local color=active and (i>40 and rgbm(1,.32,.25,1) or accent) or rgbm(.18,.23,.26,1)
++  ui.drawLine(vec2(x+math.cos(angle)*94,y+math.sin(angle)*94),vec2(x+math.cos(angle)*103,y+math.sin(angle)*103),color,4)
++ end
++ local speed=math.floor(car.speedKmh+.5);text(speed,48,x-48,y-49);text('KM/H',13,x-21,y+2)
++ text(car.gear<0 and 'R' or car.gear==0 and 'N' or tostring(car.gear),35,x-11,y+20,accent)
++ text(math.floor(car.rpm)..' RPM',12,x-34,y+65)
++ text('MATRIX / DRIVE',13,32,30,accent)
++ text(string.format('%d   x%.1f',score.score,score.combo),28,32,55)
++ text('CLEAN PASSES  '..score.passes..'   RANK  '..(score.rank>0 and score.rank or '--'),13,32,94)
++ text(age<3 and 'ROOM BEST' or 'SCORE UPDATES UNAVAILABLE',12,32,132,accent)
++ for i,key in ipairs({'first','second','third'})do if score[key] and score[key]~='' then text(i..'  '..score[key]..'   '..score[key..'Score'],15,32,142+i*24) end end
++ text('F7  Toggle Matrix HUD',12,size.x-238,size.y-35)
++end
++local hud=ui.onExclusiveHUD(function(mode)
++ if ui.keyPressed(ui.KeyIndex.F7) then enabled=not enabled end
++ if mode~='game' or not enabled then return end
++ draw();return true
++end)
++function script.release()hud:dispose()end
+diff --git a/AssettoServer/Server/Lua/matrix_physics.lua b/AssettoServer/Server/Lua/matrix_physics.lua
+new file mode 100644
+index 0000000..76b3144
+--- /dev/null
++++ b/AssettoServer/Server/Lua/matrix_physics.lua
+@@ -0,0 +1,81 @@
++-- Matrix Games: server-authoritative contacts with external vehicles only.
++-- Native/native and native/track collision solvers remain in Assetto Corsa.
++local slots = __MATRIX_SLOTS__
++local elapsed, nextReport, lease, sequence = 0, 0, -10, 0
++local reportedSend=false
++local offset = nil
++local collided=false
++local bySession, collisionStates={},{}
++local function carBySession(slot)return bySession[slot]end
++local calibrationAt,calibrationIndex,nextIndex,diagnosticAt=0,1,0,0
++local modelGround={['06_ygt_53_nissan_350z']=.25743,['nohesi_traffic_toyota_prius']=.50341796875}
++local calibrationEnabled=__MATRIX_CALIBRATION__
++local calibrationLogged={}
++local sendCalibration=ac.OnlineEvent({ac.StructItem.key('MG_PoseCalibration_v1'),slot=ac.StructItem.byte(),offset=ac.StructItem.float()},function() end)
++local sendState = ac.OnlineEvent({ac.StructItem.key('MG_PhysicsState_v1'),
++  ready=ac.StructItem.boolean(), feet=ac.StructItem.vec3(), velocity=ac.StructItem.vec3(), offset=ac.StructItem.float(), ack=ac.StructItem.int32(),collision=ac.StructItem.boolean()}, function() end)
++local enabled = physics.allowed() and ac.getPatchVersionCode() >= 3424
++ac.log('[Matrix physics] loaded; physics permission='..tostring(enabled))
++ac.OnlineEvent({ac.StructItem.key('MG_PhysicsImpulse_v1'), sequence=ac.StructItem.int32(), delta=ac.StructItem.vec3()}, function(sender, data)
++  if sender ~= nil or not enabled or data.sequence <= sequence then return end
++  local d=data.delta
++  if d.x~=d.x or d.y~=d.y or d.z~=d.z or d:length()>80 then return end
++  if sequence==0 then ac.log('[Matrix physics] server lease acknowledged') end
++  sequence=data.sequence; lease=elapsed
++  if d:lengthSquared()>0 then physics.setCarVelocity(0,ac.getCar(0).velocity+d);ac.log('[Matrix physics] contact impulse '..sequence..' dv='..d:length()) end
++end)
++local function collisions(disable)
++  for _,slot in ipairs(slots) do
++    local car=carBySession(slot)
++    if car and car.index~=0 and collisionStates[car.index]~=disable then physics.disableCarCollisions(car.index,disable,true);collisionStates[car.index]=disable end
++  end
++end
++function script.update(dt)
++  elapsed=elapsed+dt
++  -- Session slots change at network cadence, not render cadence.
++  if elapsed>=nextIndex then
++    nextIndex=elapsed+.1
++    for k in pairs(bySession) do bySession[k]=nil end
++    for i=0,ac.getSim().carsCount-1 do local c=ac.getCar(i);if c.isConnected~=false then bySession[c.sessionID]=c else collisionStates[i]=nil end end
++  end
++  local car=ac.getCar(0)
++  collided=collided or (car.collisionDepth or 0)>.001
++  local total,count=0,0
++  for i=0,3 do local w=car.wheels[i]
++    if w.load>10 then total=total+(car.position-w.contactPoint):dot(car.up);count=count+1 end
++  end
++  if count==4 then local measured=total/count;if measured>.05 and measured<2 then if not offset then ac.log('[Matrix physics] grounded offset='..measured) end;offset=measured end end
++  if calibrationEnabled and #slots>0 and elapsed>=calibrationAt then
++    calibrationAt=elapsed+.5;local slot=slots[calibrationIndex];calibrationIndex=calibrationIndex%#slots+1
++    local remote=carBySession(slot)
++    if remote and modelGround[remote:id()] then
++      -- Network poses are physics origins. Measure to actual tyre bottoms;
++      -- adding the exported mesh lift to the body transform double-counted lift.
++      local lift,bottom,count=0,0,0
++      for i=0,3 do local w=remote.wheels[i];local r=w.tyreRadius or 0
++        if w.position and r>.1 and r<1 then
++          lift=lift+(remote.transform.position-w.position):dot(remote.up)+r
++          bottom=bottom+w.position.y-r;count=count+1
++        end
++      end
++      if count==4 then
++        lift=lift/count
++        if lift>.05 and lift<2 then sendCalibration({slot=slot,offset=lift},false,255) end
++        ac.log('[Matrix pose] '..remote:id()..' lift='..lift..' tyreBottom='..bottom/count)
++      end
++    end
++  end
++  if calibrationEnabled and elapsed>=diagnosticAt then
++    diagnosticAt=elapsed+5;local sim=ac.getSim()
++    ac.log('[Matrix performance] fps='..tostring(sim.fps)..' cpuTime='..tostring(sim.cpuTime)..' physicsLate='..tostring(sim.physicsLate))
++  end
++  local ready=enabled and offset~=nil
++  -- A dropped server lease restores the native colliders automatically.
++  if enabled then collisions(ready and elapsed-lease<.75) end
++  if elapsed>=nextReport then
++    nextReport=elapsed+.1
++    local sent=sendState({ready=ready,feet=car.position-car.up*(offset or 0),offset=offset or 0,velocity=car.velocity,ack=sequence,collision=collided},false,255);collided=false
++    if not reportedSend then reportedSend=true;ac.log('[Matrix physics] state sent='..tostring(sent)..' direct='..tostring(ac.getSim().directMessagingAvailable)) end
++  end
++end
++function script.release() if enabled then collisions(false) end end
+diff --git a/AssettoServer/Server/MatrixBridge.cs b/AssettoServer/Server/MatrixBridge.cs
+new file mode 100644
+index 0000000..1019743
+--- /dev/null
++++ b/AssettoServer/Server/MatrixBridge.cs
+@@ -0,0 +1,146 @@
++using System;
++using System.IO;
++using System.Collections.Generic;
++using System.Numerics;
++using System.Reflection;
++using AssettoServer.Network.Tcp;
++using AssettoServer.Server.Weather;
++using System.Linq;
++using System.Net;
++using System.Security.Cryptography;
++using System.Text;
++using System.Threading;
++using System.Threading.Tasks;
++using Microsoft.Extensions.Hosting;
++
++namespace AssettoServer.Server;
++
++public sealed class MatrixBridge(ACServer server, EntryCarManager cars, SessionManager session, WeatherManager weather, CSPServerScriptProvider scripts, CSPClientMessageTypeManager messages) : IHostedService
++{
++    private readonly object _gate = new();
++    private readonly Dictionary<ACTcpClient,(MatrixPhysicsState State,long Time)> _physics = new();
++    private int _impulseSequence;
++    private long _scoreTime;
++    private long _physicsDiagnosticTime;
++    private readonly Dictionary<string,float> _poseOffsets=new();
++    private readonly Dictionary<ACTcpClient,long> _calibrationTime=new();
++    private bool Coupled(ACTcpClient client,long now) => _physics.TryGetValue(client,out var p) && p.State.Ready && p.State.Ack>0 && now-p.Time<500;
++    private float[]? Feet(ACTcpClient client,long now) => _physics.TryGetValue(client,out var p) && p.State.Offset>.05 && now-p.Time<500 ? [p.State.Feet.X,p.State.Feet.Y,p.State.Feet.Z] : null;
++    private Vector3 Velocity(ACTcpClient client,long now) => _physics.TryGetValue(client,out var p)&&now-p.Time<500?p.State.Velocity:client.EntryCar.Status.Velocity;
++    private void OnPhysics(ACTcpClient client,MatrixPhysicsState state)
++    {
++        if(!float.IsFinite(state.Velocity.X+state.Velocity.Y+state.Velocity.Z)||state.Velocity.Length()>200)return;
++        if(client.MatrixAccountId == null || !client.HasSentFirstUpdate || !float.IsFinite(state.Offset) || state.Offset is <0 or >2 || !float.IsFinite(state.Feet.X+state.Feet.Y+state.Feet.Z))return;
++        var poseDistance=Vector3.Distance(state.Feet,client.EntryCar.Status.Position);
++        if(poseDistance>5){var time=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();if(time-_physicsDiagnosticTime>5000){_physicsDiagnosticTime=time;Serilog.Log.Warning("Matrix companion pose rejected distance={Distance} speed={Speed}",poseDistance,state.Velocity.Length());}return;}
++        lock(_gate){var now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();if(_physics.TryGetValue(client,out var previous)&&now-previous.Time<70)return;if(previous.State==null)Serilog.Log.Information("Matrix physics report ready={Ready} offset={Offset}",state.Ready,state.Offset);_physics[client]=(state,now);}
++    }
++    private MatrixFrameGate? _validator;
++    private byte[]? _tokenHash;
++    private MatrixFrame? _pending;
++    private readonly Dictionary<(byte Slot,string Account),(Vector3 Delta,long Time)> _pendingImpacts=new();
++    private long _lastFrame;
++    private long _applied;
++    private MatrixSnapshot? _snapshot;
++
++    public bool Authorized(IPAddress? address, string header)
++    {
++        if (_tokenHash == null || address == null || !(IPAddress.IsLoopback(address) || (address.IsIPv4MappedToIPv6 && IPAddress.IsLoopback(address.MapToIPv4())))
++            || !header.StartsWith("Bearer ", StringComparison.Ordinal) || header.Length > 256) return false;
++        return CryptographicOperations.FixedTimeEquals(_tokenHash, SHA256.HashData(Encoding.UTF8.GetBytes(header[7..])));
++    }
++
++    public MatrixSnapshot? Exchange(MatrixFrame frame)
++    {
++        lock (_gate)
++        {
++            if (_validator == null || !_validator.Accept(frame, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())) return null;
++            _pending = frame;
++            foreach(var impact in frame.Impacts??[]){var key=(impact.Slot,impact.Account);var sum=new Vector3(impact.Delta[0],impact.Delta[1],impact.Delta[2]);if(_pendingImpacts.TryGetValue(key,out var old)&&frame.IssuedAt-old.Time<500)sum+=old.Delta;if(sum.Length()>80)sum=Vector3.Normalize(sum)*80;_pendingImpacts[key]=(sum,frame.IssuedAt);}
++            return _snapshot;
++        }
++    }
++
++    public Task StartAsync(CancellationToken cancellationToken)
++    {
++        var settings = MatrixBridgeSettings.Current;
++        if (settings == null) return Task.CompletedTask;
++        if (settings.Slots.Any(s => s >= cars.EntryCars.Length || cars.EntryCars[s].AiControlled))
++            throw new InvalidDataException("Matrix bridge requires exclusive non-AI slots in the entry list");
++        var token = File.ReadAllText(settings.TokenFile).Trim();
++        if (token.Length < 43 || token.Length > 128) throw new InvalidDataException("Matrix bridge requires a strong private token");
++        _tokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(token));
++        MatrixNativeAdmission.Current = new MatrixNativeAdmission(settings.Room,token);
++        _validator = new MatrixFrameGate(settings.Room, settings.Revision, settings.Slots);
++        _snapshot = new MatrixSnapshot(1, settings.Room, settings.Revision, 0, 0, []);
++        foreach(var pair in settings.PoseOffsets??new())_poseOffsets[pair.Key]=pair.Value;
++        messages.RegisterOnlineEvent<MatrixPhysicsState>(OnPhysics);
++        messages.RegisterOnlineEvent<MatrixPoseCalibration>((client,p)=>{
++            // Calibration is an isolated staging tool, never a player's global
++            // model-height control in production. Release offsets are operator pinned.
++            if(!settings.AllowPoseCalibration||client.MatrixAccountId==null||p.Slot>=cars.EntryCars.Length||!settings.Slots.Contains(p.Slot)||!float.IsFinite(p.Offset)||p.Offset is <.05f or >2f)return;
++            lock(_gate){var now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();if(_calibrationTime.TryGetValue(client,out var last)&&now-last<200)return;_calibrationTime[client]=now;_poseOffsets[cars.EntryCars[p.Slot].Model]=p.Offset;}
++        });
++        // Consume spoofed client impulses; never relay them to other clients.
++        messages.RegisterOnlineEvent<MatrixPhysicsImpulse>((_,_)=>{});
++        messages.RegisterOnlineEvent<MatrixDrivingScore>((_,_)=>{});
++        using var lua=new StreamReader(Assembly.GetExecutingAssembly().GetManifestResourceStream("AssettoServer.Server.Lua.matrix_physics.lua")!);
++        scripts.AddScript(lua.ReadToEnd().Replace("__MATRIX_SLOTS__","{"+string.Join(",",settings.Slots)+"}").Replace("__MATRIX_CALIBRATION__",settings.AllowPoseCalibration?"true":"false"),configuration:new Dictionary<string,object>{{"REQUIRED",1}});
++        using var hud=new StreamReader(Assembly.GetExecutingAssembly().GetManifestResourceStream("AssettoServer.Server.Lua.matrix_hud.lua")!);
++        scripts.AddScript(hud.ReadToEnd(),configuration:new Dictionary<string,object>{{"REQUIRED",1}});
++        server.Update += Tick;
++        return Task.CompletedTask;
++    }
++
++    private void Tick(ACServer sender, EventArgs args)
++    {
++        var settings = MatrixBridgeSettings.Current!;
++        MatrixFrame? frame;
++        Dictionary<(byte Slot,string Account),(Vector3 Delta,long Time)> impacts;
++        lock (_gate) { frame = _pending; _pending = null;impacts=new(_pendingImpacts);_pendingImpacts.Clear(); }
++        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
++        if (frame != null)
++        {
++            if(now-_scoreTime>=500){_scoreTime=now;foreach(var score in frame.Scores??[]){if(score.Slot>=cars.EntryCars.Length)continue;var client=cars.EntryCars[score.Slot].Client;if(client?.MatrixAccountId!=score.Account)continue;var rows=score.Leaders;client.SendPacket(new MatrixDrivingScore{Score=score.Score,Combo=score.Combo,Passes=score.Passes,Rank=score.Rank,First=rows.ElementAtOrDefault(0)?.Driver??"",FirstScore=rows.ElementAtOrDefault(0)?.Score??0,Second=rows.ElementAtOrDefault(1)?.Driver??"",SecondScore=rows.ElementAtOrDefault(1)?.Score??0,Third=rows.ElementAtOrDefault(2)?.Driver??"",ThirdScore=rows.ElementAtOrDefault(2)?.Score??0});}}
++            lock(_gate){
++                foreach(var client in _physics.Keys.Where(c=>c.EntryCar.Client!=c).ToArray())_physics.Remove(client);
++                foreach(var client in _calibrationTime.Keys.Where(c=>c.EntryCar.Client!=c).ToArray())_calibrationTime.Remove(client);
++                foreach(var car in cars.EntryCars.Where(c=>c.Client!=null&&!c.ExternalReserved)){
++                    var client=car.Client!;if(!_physics.TryGetValue(client,out var state)||!state.State.Ready||now-state.Time>=500)continue;
++                    var hasImpact=client.MatrixAccountId!=null&&impacts.TryGetValue((car.SessionId,client.MatrixAccountId),out var impact)&&now-impact.Time<500;
++                    var delta=hasImpact?impacts[(car.SessionId,client.MatrixAccountId!)].Delta:Vector3.Zero;
++                    client.SendPacket(new MatrixPhysicsImpulse{Sequence=++_impulseSequence,Delta=delta});
++                }
++            }
++            var active = frame.Vehicles.Select(v => (int)v.Slot).ToHashSet();
++            foreach (var slot in settings.Slots) if (!active.Contains(slot)) cars.EntryCars[slot].ClearExternal();
++            foreach (var vehicle in frame.Vehicles) cars.EntryCars[vehicle.Slot].SetExternal(vehicle, session.ServerTimeMilliseconds);
++            _lastFrame = now;
++            _applied = frame.Sequence;
++        }
++        else if (now - _lastFrame >= MatrixFrameGate.LeaseMilliseconds)
++            foreach (var slot in settings.Slots) cars.EntryCars[slot].ClearExternal();
++        // Account UUID is private admission bookkeeping; the public broker snapshot strips it.
++        // Steam IDs, IPs, chat and authentication material never cross the relay.
++        lock(_gate){
++        var native = cars.EntryCars.Where(c => c.Client is { HasSentFirstUpdate: true } && !c.ExternalReserved)
++            .Select(c => new MatrixNativeVehicle(c.SessionId, c.Model, $"Driver {c.SessionId + 1}",
++                [c.Status.Position.X, c.Status.Position.Y, c.Status.Position.Z],
++                [c.Status.Rotation.X, c.Status.Rotation.Y, c.Status.Rotation.Z],
++                [Velocity(c.Client!,now).X, Velocity(c.Client!,now).Y, Velocity(c.Client!,now).Z], c.Client!.MatrixAccountId,
++                c.Status.EngineRpm,c.Status.Gear,c.Status.Gas,c.Status.SteerAngle,
++                c.Status.StatusFlag.HasFlag(AssettoServer.Shared.Network.Packets.Outgoing.CarStatusFlags.BrakeLightsOn),
++                c.Status.StatusFlag.HasFlag(AssettoServer.Shared.Network.Packets.Outgoing.CarStatusFlags.LightsOn),Coupled(c.Client!,now),Feet(c.Client!,now),_physics.TryGetValue(c.Client!,out var telemetry)&&now-telemetry.Time<500&&telemetry.State.Collision)).ToArray();
++        var w=weather.CurrentWeather;
++        var environment=new MatrixEnvironment((float)weather.CurrentDateTime.TimeOfDay.TickOfDay/10000000f/3600f,w.RainIntensity,w.RainWetness,w.RainWater,1-w.Type.Sun,w.TrackGrip,w.WindSpeed,w.WindDirection,w.TemperatureAmbient,weather.CurrentDateTime.DayOfYear,(float)(weather.TrackParams?.Latitude??34.05));
++        lock (_gate) _snapshot = new MatrixSnapshot(1, settings.Room, settings.Revision, _applied, now, native,environment,new Dictionary<string,float>(_poseOffsets));
++        }
++    }
++
++    public Task StopAsync(CancellationToken cancellationToken)
++    {
++        server.Update -= Tick;
++        _tokenHash = null;
++        return Task.CompletedTask;
++    }
++}
+diff --git a/AssettoServer/Server/MatrixBridgeProtocol.cs b/AssettoServer/Server/MatrixBridgeProtocol.cs
+new file mode 100644
+index 0000000..09aad04
+--- /dev/null
++++ b/AssettoServer/Server/MatrixBridgeProtocol.cs
+@@ -0,0 +1,74 @@
++// Matrix Games external vehicles. Native Steam authentication is unchanged.
++using System;
++using System.Collections.Generic;
++using System.Linq;
++
++namespace AssettoServer.Server;
++
++public sealed record MatrixVehicle(byte Slot, string Entity, string Name,
++    float[] Position, float[] Rotation, float[] Velocity, ushort Rpm = 800,
++    byte Gear = 1, byte Gas = 0, byte Steer = 127, bool Brake = false, bool Lights = false);
++public sealed record MatrixFrame(int Schema, string Room, string Revision, string Stream,
++    long Sequence, long IssuedAt, MatrixVehicle[] Vehicles, MatrixImpact[]? Impacts = null, MatrixScore[]? Scores = null);
++public sealed record MatrixLeader(int Rank,string Driver,int Score,int Passes);
++public sealed record MatrixScore(byte Slot,string Account,int Score,float Combo,int Passes,int Rank,MatrixLeader[] Leaders);
++public sealed record MatrixImpact(byte Slot, string Account, float[] Delta);
++public sealed record MatrixNativeVehicle(byte Slot, string Model, string Name,
++    float[] Position, float[] Rotation, float[] Velocity, string? Account = null,
++    ushort Rpm = 800, byte Gear = 1, byte Gas = 0, byte Steer = 127, bool Brake = false, bool Lights = false, bool Coupled = false, float[]? Feet = null,bool Collision=false);
++public sealed record MatrixEnvironment(float Hour,float Rain,float Wetness,float Water,float Cloud,float Grip,float Wind,int WindDirection,float Temperature,int DayOfYear=172,float Latitude=34.05f);
++public sealed record MatrixSnapshot(int Schema, string Room, string Revision, long AppliedSequence,
++    long ServerTime, MatrixNativeVehicle[] Vehicles, MatrixEnvironment? Environment = null, Dictionary<string,float>? PoseOffsets = null);
++
++/// <summary>One authenticated relay owns a complete, bounded external-vehicle set.</summary>
++public sealed class MatrixFrameGate(string room, string revision, IEnumerable<int> slots)
++{
++    private readonly HashSet<int> _slots = slots.ToHashSet();
++    private string? _stream;
++    private long _sequence;
++    private long _lastAccepted;
++    private long _lastIssued;
++    public const int LeaseMilliseconds = 3000;
++
++    public bool Accept(MatrixFrame frame, long now)
++    {
++        if (frame.Schema != 1 || frame.Room != room || frame.Revision != revision
++            || !Guid.TryParseExact(frame.Stream, "D", out _) || frame.Sequence < 1
++            || frame.IssuedAt < now - 2000 || frame.IssuedAt > now + 1000
++            || frame.Vehicles == null || frame.Vehicles.Length > _slots.Count) return false;
++        if(frame.Impacts is {Length: > 32})return false;
++        var impacted = new HashSet<byte>();
++        foreach(var impact in frame.Impacts ?? [])
++            if(impact == null || _slots.Contains(impact.Slot) || !impacted.Add(impact.Slot) || !Guid.TryParse(impact.Account,out _) || !Vector(impact.Delta,80) || impact.Delta.Sum(x=>x*x)>6400)return false;
++        var seen = new HashSet<byte>();
++        var scored=new HashSet<byte>();
++        if(frame.Scores is {Length:>32})return false;
++        foreach(var score in frame.Scores??[])
++            if(score==null||_slots.Contains(score.Slot)||!scored.Add(score.Slot)||!Guid.TryParse(score.Account,out _)||score.Score<0||score.Passes<0||!float.IsFinite(score.Combo)||score.Combo is <1 or >5||score.Rank is <0 or >10||score.Leaders==null||score.Leaders.Length>3||score.Leaders.Any(l=>l==null||l.Score<0||l.Driver==null||l.Driver.Length>20||l.Driver.Any(c=>!char.IsAsciiLetterOrDigit(c)&&c!=' ')))return false;
++        var entities = new HashSet<string>(StringComparer.Ordinal);
++        foreach (var car in frame.Vehicles)
++        {
++            if (car == null || !_slots.Contains(car.Slot) || !seen.Add(car.Slot)
++                || string.IsNullOrEmpty(car.Entity) || car.Entity.Length > 96 || !entities.Add(car.Entity)
++                || car.Entity.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not '-' and not '_' and not ':')
++                || string.IsNullOrWhiteSpace(car.Name) || car.Name.Length > 48 || car.Name.Any(char.IsControl)
++                || !Vector(car.Position, 100000) || !Vector(car.Rotation, 4 * MathF.PI)
++                || !Vector(car.Velocity, 200) || car.Gear > 15) return false;
++        }
++        if (_stream == frame.Stream)
++        {
++            if (frame.Sequence <= _sequence || frame.IssuedAt < _lastIssued) return false;
++        }
++        else if (_stream != null && now - _lastAccepted < LeaseMilliseconds) return false;
++        // Maximum 40 accepted frames/sec; malformed or replayed frames never renew a lease.
++        if (_stream != null && now - _lastAccepted < 25) return false;
++        _stream = frame.Stream;
++        _sequence = frame.Sequence;
++        _lastAccepted = now;
++        _lastIssued = frame.IssuedAt;
++        return true;
++    }
++
++    private static bool Vector(float[]? value, float bound) => value is { Length: 3 }
++        && value.All(v => float.IsFinite(v) && MathF.Abs(v) <= bound);
++}
+diff --git a/AssettoServer/Server/MatrixBridgeSettings.cs b/AssettoServer/Server/MatrixBridgeSettings.cs
+new file mode 100644
+index 0000000..0d6697e
+--- /dev/null
++++ b/AssettoServer/Server/MatrixBridgeSettings.cs
+@@ -0,0 +1,27 @@
++using System;
++using System.IO;
++using System.Linq;
++using System.Collections.Generic;
++using System.Text.Json;
++
++namespace AssettoServer.Server;
++
++public sealed record MatrixBridgeSettings(string Room, string Revision, string TokenFile, int[] Slots, bool AllowPoseCalibration=false, Dictionary<string,float>? PoseOffsets=null)
++{
++    public static MatrixBridgeSettings? Current { get; } = Load();
++    private static MatrixBridgeSettings? Load()
++    {
++        var path = Environment.GetEnvironmentVariable("MATRIX_ASSETTO_BRIDGE_CONFIG");
++        if (string.IsNullOrWhiteSpace(path)) return null;
++        var result = JsonSerializer.Deserialize<MatrixBridgeSettings>(File.ReadAllText(path),
++            new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? throw new InvalidDataException("Missing bridge configuration");
++        if (result.Room is not ("nohesi-110" or "nohesi-415") || string.IsNullOrWhiteSpace(result.Revision)
++            || result.Revision.Length > 80 || !Path.IsPathFullyQualified(result.TokenFile)
++            || result.Slots is not { Length: > 0 and <= 200 }
++            || result.Slots.Any(s => s < 0 || s > 254)
++            || result.Slots.Distinct().Count() != result.Slots.Length
++            || result.PoseOffsets?.Any(p=>p.Key is not ("06_ygt_53_nissan_350z" or "nohesi_traffic_toyota_prius") || !float.IsFinite(p.Value) || p.Value is <.05f or >2f)==true)
++            throw new InvalidDataException("Invalid Matrix bridge configuration");
++        return result;
++    }
++}
+diff --git a/AssettoServer/Server/MatrixNativeAdmission.cs b/AssettoServer/Server/MatrixNativeAdmission.cs
+new file mode 100644
+index 0000000..124baa2
+--- /dev/null
++++ b/AssettoServer/Server/MatrixNativeAdmission.cs
+@@ -0,0 +1,38 @@
++using System;
++using System.Collections.Generic;
++using System.Linq;
++using System.Security.Cryptography;
++using System.Text;
++using System.Text.RegularExpressions;
++
++namespace AssettoServer.Server;
++
++// Website account authorization supplements, and never replaces, Steam auth.
++public sealed class MatrixNativeAdmission(string room, string key)
++{
++    public static MatrixNativeAdmission? Current { get; set; }
++    private readonly object _gate = new();
++    private readonly Dictionary<string,long> _used = new();
++    private readonly HashSet<string> _actors = new();
++    private static string Url(byte[] data) => Convert.ToBase64String(data).TrimEnd('=').Replace('+','-').Replace('/','_');
++    public bool Accept(ulong steam, string model, string password, long now, out string? actor)
++    {
++        actor=null;
++        if(model!="06_ygt_53_nissan_350z" || password.Length>240)return false;
++        var parts=password.Split('.');
++        if(parts.Length!=3||parts[0]!="mg1"||!Regex.IsMatch(parts[1],"^[A-Za-z0-9_-]+$")||!Regex.IsMatch(parts[2],"^[A-Za-z0-9_-]{43}$"))return false;
++        var expected=Url(HMACSHA256.HashData(Encoding.UTF8.GetBytes(key),Encoding.UTF8.GetBytes(room+"|"+parts[1])));
++        if(!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(expected),Encoding.ASCII.GetBytes(parts[2])))return false;
++        string[] values;
++        try { var p=parts[1].Replace('-','+').Replace('_','/');p=p.PadRight((p.Length+3)/4*4,'=');values=Encoding.UTF8.GetString(Convert.FromBase64String(p)).Split('|'); }
++        catch(FormatException){return false;}
++        if(values.Length!=4||!Guid.TryParseExact(values[0],"D",out _)||values[1]!=steam.ToString()
++           ||!long.TryParse(values[2],out var expires)||expires<=now||expires>now+95||!Regex.IsMatch(values[3],"^[A-Za-z0-9_-]{16}$"))return false;
++        lock(_gate){
++            foreach(var id in _used.Where(v=>v.Value<=now).Select(v=>v.Key).ToArray())_used.Remove(id);
++            if(_used.Count>=4096||_used.ContainsKey(values[3])||_actors.Contains(values[0]))return false;
++            _used.Add(values[3],expires);_actors.Add(values[0]);actor=values[0];return true;
++        }
++    }
++    public void Release(string? actor){if(actor!=null)lock(_gate)_actors.Remove(actor);}
++}
+diff --git a/AssettoServer/Server/MatrixPhysicsPackets.cs b/AssettoServer/Server/MatrixPhysicsPackets.cs
+new file mode 100644
+index 0000000..fc9d9e4
+--- /dev/null
++++ b/AssettoServer/Server/MatrixPhysicsPackets.cs
+@@ -0,0 +1,44 @@
++using System.Numerics;
++using AssettoServer.Network.ClientMessages;
++
++namespace AssettoServer.Server;
++
++[OnlineEvent(Key = "MG_PhysicsState_v1")]
++public class MatrixPhysicsState : OnlineEvent<MatrixPhysicsState>
++{
++    [OnlineEventField(Name = "ready")] public bool Ready;
++    [OnlineEventField(Name = "feet")] public Vector3 Feet;
++    [OnlineEventField(Name = "velocity")] public Vector3 Velocity;
++    [OnlineEventField(Name = "offset")] public float Offset;
++    [OnlineEventField(Name = "ack")] public int Ack;
++    [OnlineEventField(Name = "collision")] public bool Collision;
++}
++
++[OnlineEvent(Key = "MG_PhysicsImpulse_v1")]
++public class MatrixPhysicsImpulse : OnlineEvent<MatrixPhysicsImpulse>
++{
++    [OnlineEventField(Name = "sequence")] public int Sequence;
++    [OnlineEventField(Name = "delta")] public Vector3 Delta;
++}
++
++[OnlineEvent(Key = "MG_PoseCalibration_v1")]
++public class MatrixPoseCalibration : OnlineEvent<MatrixPoseCalibration>
++{
++    [OnlineEventField(Name = "slot")] public byte Slot;
++    [OnlineEventField(Name = "offset")] public float Offset;
++}
++
++[OnlineEvent(Key = "MG_DrivingScore_v1")]
++public class MatrixDrivingScore : OnlineEvent<MatrixDrivingScore>
++{
++    [OnlineEventField(Name="score")] public int Score;
++    [OnlineEventField(Name="combo")] public float Combo;
++    [OnlineEventField(Name="passes")] public int Passes;
++    [OnlineEventField(Name="rank")] public int Rank;
++    [OnlineEventField(Name="first",Size=20)] public string First="";
++    [OnlineEventField(Name="firstScore")] public int FirstScore;
++    [OnlineEventField(Name="second",Size=20)] public string Second="";
++    [OnlineEventField(Name="secondScore")] public int SecondScore;
++    [OnlineEventField(Name="third",Size=20)] public string Third="";
++    [OnlineEventField(Name="thirdScore")] public int ThirdScore;
++}
+diff --git a/AssettoServer/Server/Steam/NativeSteam.cs b/AssettoServer/Server/Steam/NativeSteam.cs
+index b3c39d9..3fba5e3 100644
+--- a/AssettoServer/Server/Steam/NativeSteam.cs
++++ b/AssettoServer/Server/Steam/NativeSteam.cs
+@@ -35,9 +35,10 @@ public class NativeSteam : BackgroundService, ISteam
+         {
+             SteamServer.Init(ISteam.AppId, serverInit);
+         }
+-        catch
++        catch (Exception ex)
+         {
+-            // ignored
++            Log.Error(ex, "Steam server runtime initialization failed");
++            if (_firstRun) throw;
+         }
+ 
+         try
+diff --git a/AssettoServer/Startup.cs b/AssettoServer/Startup.cs
+index 50a44e9..a2751c2 100644
+--- a/AssettoServer/Startup.cs
++++ b/AssettoServer/Startup.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.IO;
+ using System.Linq;
+ using System.Net.Http;
+@@ -65,6 +65,7 @@ public class Startup
+         builder.RegisterType<FileBasedUserGroupProvider>().AsSelf().As<IUserGroupProvider>().As<IHostedService>().SingleInstance();
+         builder.RegisterType<SignalHandler>().AsSelf().As<IHostedService>().SingleInstance();
+         builder.RegisterType<HttpInfoCache>().AsSelf().As<IHostedService>().SingleInstance();
++        builder.RegisterType<MatrixBridge>().AsSelf().As<IHostedService>().SingleInstance();
+         RegisterLegacyPluginInterface();
+         RegisterSteam();
+         RegisterRcon();
+diff --git a/MATRIX_BRIDGE.md b/MATRIX_BRIDGE.md
+new file mode 100644
+index 0000000..bbf2dbe
+--- /dev/null
++++ b/MATRIX_BRIDGE.md
+@@ -0,0 +1,40 @@
++# Matrix Games shared-session staging
++
++This fork adds a private external-vehicle relay to AssettoServer. It is not yet
++a playable or production-validated native/browser crossplay release.
++
++Native players continue through AssettoServer's normal Steam authentication and
++checksum checks. Browser identity remains the responsibility of Matrix City's
++existing authenticated room admission. No browser connects to this relay directly.
++
++Set `MATRIX_ASSETTO_BRIDGE_CONFIG` to a private JSON file with `room`, `revision`,
++`tokenFile`, and a bounded `slots` array. Without this setting the relay is disabled.
++The token file must contain a high-entropy, 32-byte-or-longer random token and be
++readable only by the dedicated service user. Never commit it or put it in a URL.
++All reserved entry slots must use `AI=none`; keep `EnableAi: false` because Matrix
++City will own shared traffic. Native players, including administrators, cannot
++claim reserved slots. The entry list fixes each slot's model.
++
++The trusted relay posts a complete frame to `/_matrix/bridge/v1/exchange` using a
++Bearer header. The route only accepts loopback callers. For another machine use
++a private connection terminating on loopback; do not weaken the address check or
++publish the bridge route through a generic reverse proxy. JSON is limited to
++128 KiB. Frames are world/revision-bound, sequenced, time-bounded and rate-limited.
++A second stream cannot replace an active lease. Invalid frames do not renew it.
++External cars disappear after a three-second lease expiry.
++
++Poses are applied on the server update loop. Replies contain only native slot,
++model and pose data with generic driver names; no Steam IDs, IP addresses,
++account metadata, chat or credentials. This protocol does not create synthetic
++Steam users. Reserved cars participate in native connection/list/position packets.
++
++Before release, verify actual native-client visibility, reconnect and expiry;
++calibrate model-specific origin offsets and slopes; integrate the authenticated
++browser room and renderer; verify the complete approved fleet; and test traffic
++identity/capacity and collisions with both clients. Unit tests are not evidence
++of gameplay parity. Do not advertise either native/browser join target as ready
++until those checks pass.
++
++Scriban is updated from 6.6.0 to 7.6.1 to address the dependency advisories reported
++by restore. Preserve the upstream AGPL license, notices and corresponding source
++availability when this modified server is offered over a network.

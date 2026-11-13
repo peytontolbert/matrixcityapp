@@ -28,7 +28,7 @@ export function installQuake3Socket(server,{db,config}) {
  const wss=new WebSocketServer({noServer:true,maxPayload:16384,perMessageDeflate:false,handleProtocols:protocols=>protocols.has('binary')?'binary':false});
  const clients=new Set();
  server.on('upgrade',async(req,socket,head)=>{
-  if(req.url?.startsWith('/v1/arcade/'))return;
+  if(req.url?.startsWith('/v1/arcade/')||req.url?.startsWith('/v1/driving/'))return;
   socket.on('error',()=>{});socket.setTimeout(10000,()=>socket.destroy());
   try{
    check(req.url==='/v1/quake3/socket',404,'Not found');

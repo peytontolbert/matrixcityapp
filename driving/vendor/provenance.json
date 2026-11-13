@@ -1,0 +1,101 @@
+{
+  "schema": 1,
+  "purpose": "Matrix Games standalone driving. Source port authorized by owner; no Matrix City application or accounts included.",
+  "files": {
+    "js/gameplay/assetto_vehicle_solver.js": "5161ed3e8f36728f872bceba64e30626c1d9bca8ef1deae3fba32a00de2cff08",
+    "nexus_extensions/rendering/physics-curves-acc07f04ed55.js": "acc07f04ed555c6e51c24bf5d9533e80a3a34c38b24ecf98ab0b12d4e08d82ea",
+    "nexus_extensions/rendering/burnout-audit-18989975d8dd.js": "cf9fba71c3aa32263637270e55fd047c9f568a5a32ffec7926d1c3a244e5ddb8",
+    "nexus_extensions/rendering/rain-water-ced407c3d74d.js": "6befc707fd51b0b3695ccb50444f10958b370450a68a530fb7b49ebd6fa73292",
+    "js/gameplay/unified_contact.js": "9db2ad1db5a9836c31dc03ff37fee7a2c66944766160df63a950832fdd08c67b",
+    "js/gameplay/impulse_system.js": "d6e8c47f35fb6c354ad02063da411d732f338b28e39bec6fad545fbad049f3b5",
+    "js/gameplay/unified_system.js": "2c01e55363b1c3d0ff8dca52031c7569a41538c6e52c085d0bdce51879581f29",
+    "js/gameplay/assetto_car_systems.js": "a45bb1bd4fce5f785ec60ced8df69d9819d766d8bbf715d68e64e3a4747c27fb",
+    "js/gameplay/tyre_environment.js": "4750d3922689f39ecab256c031343994052b41fddccbcbdac963dba426a95dd1",
+    "js/gameplay/combined_contact.js": "3a6980fe5d88236476d37fd34007d33cff41efa95a2810d47311b67acade233f",
+    "js/gameplay/vertical_dynamics.js": "2a46dbc0edca247cadd22fda819262de5b1c4cedae87c48aa358c9ba879acfd2",
+    "js/gameplay/tyre_contact_dynamics.js": "8a6792c61e4e71dc8426a7132a44c195abff53282f1e506e8777591c276e9151",
+    "js/gameplay/assetto_foundation.js": "346293c698e130c59a7f895901825e030f8b037d555b349c289e8df027803a03",
+    "js/gameplay/vehicle_physics_modes.js": "0ad74d0d694a7412b12f088a5076a22707efe8199363a52bc29d5097454084d6",
+    "js/gameplay/vehicle_contact_helpers.js": "c3bb423697ccf95c982f25f4b2bf241a0492b1244d12909693dbcfd192ca46ad",
+    "js/gameplay/driving_lifecycle.js": "ca05803d58deb67b3e03661cc90d2e1f023c23c2918549dc2625e4c96c4f0a98",
+    "js/gameplay/driver_transmission.js": "4e2045f2093f6ea411d979d97229424ade8c5c97c83f2c97078ee34cc19e5022",
+    "js/gameplay/gearbox_limits.js": "7d99116294c3eb584469e5d838a8ee093d1e0cbfbf61cca786af0b8c17a4c96a",
+    "js/gameplay/assetto_rotational.js": "2ad23dc732d41ce870f0fcfc5174612775fa766f2c633f788f8c6a154a4cce4f",
+    "nexus_extensions/rendering/tire-water-force-v1.js": "ddd34a5a9ef33c1f9fce427c635d4aabe5bda6f7ed0d0903611ceb64dc1fc01d",
+    "js/gameplay/assetto_dynamics_validation.js": "9fb0df8726a55ef18b92b25725ea3d328e9555ed36e2956b83bddc49c55e92a2",
+    "js/gameplay/collision_world.js": "7f03a05c03d5f424e99fa0f488bb4c2b2791bdb059e88f6e6078f916fd233a7f",
+    "nexus_extensions/nexus_110_exact_collision_v2.js": "e3a60a58883de08b7323a2ccfbac36aaaa6fb09bcf0fba58b65774eea1519651",
+    "nexus_extensions/exact_triangle_query_index.js": "c7f34a2093d8066941d2071c02734d88d500936be2fd4cf1acd559caa6173215",
+    "js/track_scene_renderer.js": "c38cf06b7a42b55f9004c1a7aefcc64a28381c705d4a66ce404610ae5d4f62b5",
+    "nexus_extensions/dlc-v1/image-loader.js": "68efc330c791b4e7ac790c8ba90b76914ee8a6742d395adb292848540e546417",
+    "js/shader_program.js": "e6a9db8450398e0b3900c68ee5901630dfe7027ce440db64d41ed9ccda2119eb",
+    "nexus_extensions/rendering/nyc-materials-v7/parallel-program.js": "7f76c1709632fa88ab47feefc174c466cfd432db73b933b0f086daaf0fb330da",
+    "js/frustum_culling.js": "723fdbb96be9788f4282c12b470974184389d3f7f102165d1599fbb13afeadcf",
+    "js/model_manager.js": "eb6fb086da0dac123a150800c18b4b47f627f767cf57791a266adcd7dcd622d3",
+    "nexus_extensions/dlc-v1/hash.js": "66482a1042d28a7bb9857f2f6ac54db9def74b98519095f63befcfc66aa22ed1",
+    "js/sky_renderer.js": "8e74c8704921533b284d6dfb9f2e1b2415d468cb5cf128f7556cbaf14bac9778",
+    "js/postfx_renderer.js": "ac3fc89c5709fde36966d4a031bd66c67bd3d856754a26553cd2532094a9096c",
+    "nexus_extensions/rendering/vehicle_chase_v2.js": "a1f81230c691cf87510446f3ed10e0e220a13f95f7329079dc0fd0024bf8a0e5",
+    "js/gameplay/audio_system.js": "9836563cc8e078ea953846aeec77677e17ceb3d1742ed7fcef3142200065b477",
+    "js/instanced_model_renderer.js": "87bb3af797181d5f3dd285761f0e408072de59149a077432d846559fb168d3fa",
+    "nexus_extensions/assetto_car_materials.js": "b35e1350e66aef941be0cc063d8bbb2ce103692b6f5ac43ed1ead63d0df1caf6"
+  },
+  "adaptations": [
+    "Relative imports",
+    "Portable asset fetch",
+    "Package gl-matrix import",
+    "Extracted CPU mesh preparation from js/model_manager.js into ../client/mesh-prepare.js; WebGL constants replace context access",
+    "Copied standalone SHA-256 from nexus_extensions/dlc-v1/hash.js to sha256.js",
+    "Track renderer and sky disposal release shader programs",
+    "Adapted translation-carrying chase camera into ../client/camera.js; authoritative collision rays bound chase distance",
+    "Adapted authored wheel-pivot transforms and caliper roll filter into ../client/wheels.js",
+    "Adapted authored emission-state bits into ../client/materials.js, using published R2 light masks; normal maps and authored roughness/F0 used by vehicle shader",
+    "Ported City HDR/temporal/async exposure pipeline; indexed camera-relative track and vehicle motion, bounded scenery and moving-car shadows, native weather inputs, clouds/rain/roof occlusion and linear lighting.",
+    "Ported City authored granular engine/exhaust and impact audio with verified R2 URLs, an AudioWorklet build, bounded driving-only preloads and HTTP legacy mixer fallback."
+  ],
+  "parityPorts": {
+    "postfx_renderer.js": {
+      "sha256": "ac3fc89c5709fde36966d4a031bd66c67bd3d856754a26553cd2532094a9096c",
+      "source": "Matrix City production-compatible source; adapted imports, R2 resolver and driving integration"
+    },
+    "temporal_upscaler.js": {
+      "sha256": "d86a204917393c9f5a62410a966a2c3d93ef60d407e24e762e32781e77c0b4fd",
+      "source": "Matrix City production-compatible source; adapted imports, R2 resolver and driving integration"
+    },
+    "async-exposure-v1.js": {
+      "sha256": "26293c7381a0b2e7b7240f36decd3bbb38214cb4ea60562939d7e6934c1ab7d7",
+      "source": "Matrix City production-compatible source; adapted imports, R2 resolver and driving integration"
+    },
+    "shadow-math.js": {
+      "sha256": "0be732acbe968f3df83e4e23392b091975eaafec8d42efd8a83b56c0849b0c8a",
+      "source": "Matrix City production-compatible source; adapted imports, R2 resolver and driving integration"
+    },
+    "weather-coupled-v3.js": {
+      "sha256": "e1e236cde50ffd1f8c285d1fb674cbeb793bef27fafd7f3a33298b6d275b21d2",
+      "source": "Matrix City production-compatible source; adapted imports, R2 resolver and driving integration"
+    },
+    "audio_system.js": {
+      "sha256": "9836563cc8e078ea953846aeec77677e17ceb3d1742ed7fcef3142200065b477",
+      "source": "Matrix City production-compatible source; adapted imports, R2 resolver and driving integration"
+    },
+    "city_vehicle_audio_worklet.js": {
+      "sha256": "24a9df71f918d5e5ed0f4ffcd7e5377b8f45cfb13e74544f6e0db8747b284e57",
+      "source": "Matrix City production-compatible source; adapted imports, R2 resolver and driving integration"
+    },
+    "cloud-volume.js": {
+      "sha256": "6d02c44b167f22c3dcfd8ce6c0ff9ff607ebfdf1985e8a2a40e16c834112a097",
+      "source": "Matrix City rendering source; relative imports and bounded driving integration"
+    },
+    "cloud-density.js": {
+      "sha256": "742ef9191fab66e43279e0819f5dfdef43f24a381a62b1dc0b3faa01c1eb3b51",
+      "source": "Matrix City rendering source; relative imports and bounded driving integration"
+    },
+    "budget.js": {
+      "sha256": "0ea609b5fc4a0bc8ed52571ce5cf10cedc385034cc49997cc15a7c67044ad12f",
+      "source": "Matrix City rendering source; relative imports and bounded driving integration"
+    },
+    "gl_util.js": {
+      "source": "Matrix City gl_util.js from local 110-teleport-ready source; texture state preservation bounded to WebGL 2 minimum 16 fragment units"
+    }
+  }
+}

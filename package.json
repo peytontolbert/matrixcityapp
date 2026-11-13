@@ -11,5 +11,10 @@
     "test": "node --test tests/*.test.mjs",
     "check:public": "node scripts/check-public.mjs",
     "dev": "node scripts/serve.mjs"
+  },
+  "dependencies": {
+    "esbuild": "0.25.12",
+    "gl-matrix": "3.4.4",
+    "ws": "8.23.0"
   }
 }
