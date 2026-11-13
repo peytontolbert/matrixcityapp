@@ -139,6 +139,38 @@ banks, weather/time synchronization and exact native wheel/suspension telemetry
 are not provided by these standalone ports. Production deployment requires the
 repository release pipeline and approval. Matrix City production is unchanged.
 
+## Browser-managed native launch
+
+On HTTPS in Chrome/Edge, native setup accepts a Steam library or the Assetto
+installation directory (read access), plus Documents/Assetto Corsa (write
+access). Handles are retained in IndexedDB per Matrix account and browser device.
+`GET/POST /v1/native-setup` stores only folder display names, relative game
+location, driver name and Steam ID in PostgreSQL. It never stores handles, file
+contents or temporary join passwords. Absolute paths are not exposed by the
+browser picker. Each additional browser/device must grant its own access;
+clearing site data or revoking permissions requires setup again.
+
+The website checks installed content, fetches validated server features through
+the authenticated API, and uses the existing single-use, Steam-bound join gate.
+It writes a durable unique backup before replacing race.ini and presents a
+fixed `steam://run/244210//%2Fspawn/` link. A separate click retains browser user
+activation and allows Steam to confirm launch arguments. No shell or downloaded
+script is involved. Steam must be signed in to the matching licensed account. The Steam ID is
+detected locally from loginusers.vdf (most recent/single account), the Assetto
+app manifest LastOwner, or REMOTE/GUID in race.ini. Only the detected ID leaves
+the device, not Steam account-file contents. Detection runs again before joins.
+
+The browser cannot detect an already-running game or its exit. Users must close
+Assetto and confirm before preparing/restoring settings. Restoration requires
+the current file to match what the website wrote, validates the backup hash,
+and survives a page reload. Changed files are never silently overwritten; users
+can explicitly keep the current settings instead. Backups remain in cfg.
+Web Locks and a pending-session record prevent overlapping browser preparations.
+The optional Matrix launcher remains available for unsupported browsers.
+
+The account schema migration must run before deploying this frontend; the
+account API and driving broker must both include `/native-settings` support.
+
 ## Persistent highscores
 
 Use Node 22.13 or newer and set `leaderboardDb` to an absolute private path such

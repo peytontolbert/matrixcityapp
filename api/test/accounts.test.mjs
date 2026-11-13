@@ -52,6 +52,21 @@ test('arcade actions require exact origin and session identity; create quota spa
 });
 async function start(){const response=await call('/auth/google/start');assert.equal(response.status,302);const query=new URL(response.headers.get('location')).searchParams;nonce=query.get('nonce');const state=query.get('state');return {response,query,state,cookie:'__Host-mg_oauth='+state};}
 async function complete(login){return call('/api/callback?'+new URLSearchParams({state:login.state,code:'fixture-authorization-code'}),{headers:{Cookie:login.cookie}});}
+
+test('native profiles require authentication, isolate users, validate fields and survive migration',async()=>{
+ const deviceId='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',settings={steamFolder:'SteamLibrary',gameFolder:'steamapps/common/assettocorsa',driver:'Fixture Driver',steamId:'76561198000000000'};
+ assert.equal((await call('/v1/native-setup')).status,401);
+ const login=await start(),signed=await complete(login),session=signed.headers.getSetCookie().find(x=>x.startsWith('__Host-mg_session=')).split(';')[0];
+ const options={method:'POST',headers:{Cookie:session,Origin:config.appOrigin,'Content-Type':'application/json'},body:JSON.stringify({deviceId,settings})};
+ assert.equal((await call('/v1/native-setup',{...options,headers:{Cookie:session,'Content-Type':'application/json'}})).status,403);
+ assert.equal((await call('/v1/native-setup',options)).status,200);await migrate(db);
+ assert.deepEqual((await(await call('/v1/native-setup',{headers:{Cookie:session}})).json()).setups,[{deviceId,settings}]);
+ for(const invalid of [{...settings,driver:'bad\n[REMOTE]'},{...settings,password:'must-not-store'},{...settings,steamId:'123'}])assert.equal((await call('/v1/native-setup',{...options,body:JSON.stringify({deviceId,settings:invalid})})).status,400);
+ claims={sub:'different-fixture-user'};const other=await complete(await start()),otherSession=other.headers.getSetCookie().find(x=>x.startsWith('__Host-mg_session=')).split(';')[0];
+ assert.deepEqual((await(await call('/v1/native-setup',{headers:{Cookie:otherSession}})).json()).setups,[]);
+ assert.equal((await call('/v1/native-setup',{...options,body:JSON.stringify({deviceId,remove:true})})).status,200);
+ assert.deepEqual((await(await call('/v1/native-setup',{headers:{Cookie:session}})).json()).setups,[]);
+});
 test('login uses PKCE, state and host-only secure cookies; callback creates a persisted account',async()=>{
  const login=await start();assert.equal(login.query.get('redirect_uri'),'https://api.matrixgames.app/api/callback');assert.equal(login.query.get('code_challenge_method'),'S256');
  const cookie=login.response.headers.get('set-cookie');for(const flag of ['__Host-mg_oauth=','HttpOnly','Secure','SameSite=Lax','Path=/'])assert.ok(cookie.includes(flag));assert.ok(!cookie.includes('Domain='));

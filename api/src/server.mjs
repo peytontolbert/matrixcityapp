@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {nativeSetupRoute} from './native-setup.mjs';
 import {arcadeRoute,installArcadeSocket} from './arcade.mjs';
 import {drivingRoute,installDrivingSocket} from './driving.mjs';
 import {pathToFileURL} from 'node:url';
@@ -31,6 +32,7 @@ export function createServer({db,config,verify,fetcher}){
    if(await quake3Route(req,res,{db,config,url}))return;
    if(await arcadeRoute(req,res,{db,config,url}))return;
    if(await drivingRoute(req,res,{db,config,url}))return;
+   if(await nativeSetupRoute(req,res,{db,config,url}))return;
    if(path==='/v1/config'&&req.method==='GET'){send(res,200,{googleEnabled:Boolean(config.googleClientId&&config.googleClientSecret),loginUrl:config.apiOrigin+'/auth/google/start'});return;}
    if(path==='/v1/me'&&req.method==='GET'){send(res,200,{user:await currentUser(db,req,config)||null});return;}
    if(path==='/auth/google/start'&&req.method==='GET'){

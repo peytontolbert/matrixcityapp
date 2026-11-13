@@ -39,11 +39,20 @@ export function createDrivingServer({sessions,assets,key,staticRoot=null}){
     return json(res,200,{revision:assets.catalog().revision,entries:body.paths.map(path=>({path,asset:assets.describe(path)}))});
    }
    if(req.method==='GET'&&url.pathname.startsWith('/assets/')){const {bytes,type}=await assets.get(decodeURIComponent(url.pathname.slice(8)));res.writeHead(200,{'Content-Type':type,'Cache-Control':'public, max-age=3600'});return res.end(bytes);}
-   if(req.method==='POST'&&['/ticket','/native-ticket','/native-redeem'].includes(url.pathname)){
+   if(req.method==='POST'&&['/ticket','/native-ticket','/native-redeem','/native-settings'].includes(url.pathname)){
     if(!authorized(req))return json(res,403,{error:'Forbidden'});
     let size=0,parts=[];for await(const p of req){size+=p.length;if(size>2048)throw Error('Request too large');parts.push(p);}
     const body=JSON.parse(Buffer.concat(parts));if(url.pathname==='/native-redeem')return json(res,200,nativeJoins.redeem(body.authorization,body.steamId));
     const actor=body.actor,session=sessions.get(body.room);if(!session)throw Error('Unknown track');
+    if(url.pathname==='/native-settings'){
+     if(!session.ready)throw Error('Native server unavailable');
+     const response=await fetch('http://'+session.native.host+':'+session.native.httpPort+'/JSON%7C0',{signal:AbortSignal.timeout(5000),redirect:'error'});
+     if(!response.ok)throw Error('Native server details unavailable');
+     let size=0,parts=[];for await(const p of response.body){size+=p.length;if(size>131072)throw Error('Invalid server details');parts.push(p);}
+     const details=JSON.parse(Buffer.concat(parts)),features=details.Features;
+     if(!Array.isArray(features)||features.length>64||features.some(v=>typeof v!=='string'||!(/^[A-Z0-9_]{1,64}$/).test(v)))throw Error('Invalid server features');
+     return json(res,200,{schema:2,room:body.room,...session.native,model:'06_ygt_53_nissan_350z',features});
+    }
     if(url.pathname==='/native-ticket')return json(res,200,nativeJoins.issue(actor,body.room));
     nativeJoins.available(actor);return json(res,200,session.ticket(actor));
    }
