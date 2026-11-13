@@ -4,6 +4,7 @@ const files=execFileSync('git',['ls-files','--cached','--others','--exclude-stan
 const prohibited=[/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,/GOCSPX-[A-Za-z0-9_-]{16,}/,/gh[pousr]_[A-Za-z0-9]{30,}/,/github_pat_[A-Za-z0-9_]{30,}/,/AKIA[A-Z0-9]{16}/,/192\.168\.\d+\.\d+/];
 let bad=false;
 for(const file of new Set(files)){
+ if(/\.(?:sqlite|sqlite3|db)(?:-wal|-shm|-journal)?$/i.test(file)){console.error('Private runtime database:',file);bad=true;continue;}
  if(/\.(?:pk3|bsp|qvm|pak|xnb|lev|assetbundle|win|unx|ios|bnk|wem)$/i.test(file)){console.error('Game data must not be public:',file);bad=true;continue;}
 
  if(file.startsWith('web/arcade/')&&/\.(?:png|webp|wav|ogg|opus)$/i.test(file)){console.error('Extracted assets must stay local:',file);bad=true;continue;}

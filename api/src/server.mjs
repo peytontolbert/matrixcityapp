@@ -1,5 +1,6 @@
 import http from 'node:http';
 import {arcadeRoute,installArcadeSocket} from './arcade.mjs';
+import {drivingRoute,installDrivingSocket} from './driving.mjs';
 import {pathToFileURL} from 'node:url';
 import {configuration} from './config.mjs';
 import {connect,cleanup} from './db.mjs';
@@ -23,10 +24,13 @@ export function createServer({db,config,verify,fetcher}){
    }
    const url=new URL(req.url,'http://localhost'),path=url.pathname;
    if(path==='/health'&&req.method==='GET'){await db.query('SELECT 1');send(res,200,{ok:true,service:'matrixgames-accounts'});return;}
+   if(req.method==='GET'&&path.startsWith('/v1/driving/assets/')){await limit(db,'driving:assets:'+clientKey(req,config),1800,60);await drivingRoute(req,res,{db,config,url});return;}
+   if(req.method==='POST'&&path==='/v1/driving/asset-proofs'){await limit(db,'driving:metadata:'+clientKey(req,config),240,60);await drivingRoute(req,res,{db,config,url});return;}
    await limit(db,'requests:global',1200,60);
    const key=clientKey(req,config);await limit(db,'requests:'+key,120,60);
    if(await quake3Route(req,res,{db,config,url}))return;
    if(await arcadeRoute(req,res,{db,config,url}))return;
+   if(await drivingRoute(req,res,{db,config,url}))return;
    if(path==='/v1/config'&&req.method==='GET'){send(res,200,{googleEnabled:Boolean(config.googleClientId&&config.googleClientSecret),loginUrl:config.apiOrigin+'/auth/google/start'});return;}
    if(path==='/v1/me'&&req.method==='GET'){send(res,200,{user:await currentUser(db,req,config)||null});return;}
    if(path==='/auth/google/start'&&req.method==='GET'){
@@ -47,6 +51,7 @@ export function createServer({db,config,verify,fetcher}){
  });
  server.requestTimeout=15000;server.headersTimeout=10000;server.keepAliveTimeout=5000;
  installQuake3Socket(server,{db,config});installArcadeSocket(server,{db,config});
+ installDrivingSocket(server,{db,config});
  return server;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
@@ -54,5 +59,5 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const db=connect(config.databaseUrl);await db.query('SELECT 1');
  const server=createServer({db,config});server.listen(config.port,'127.0.0.1',()=>console.log('Matrix Games account service ready'));
  const timer=setInterval(()=>cleanup(db).catch(()=>console.error('Account cleanup failed')),300000);timer.unref();
- const stop=()=>{clearInterval(timer);server.closeQuake3Sockets();server.closeArcadeSockets();server.close(()=>db.end().then(()=>process.exit(0)));};process.once('SIGTERM',stop);process.once('SIGINT',stop);
+ const stop=()=>{clearInterval(timer);server.closeQuake3Sockets();server.closeArcadeSockets();server.closeDrivingSockets();server.close(()=>db.end().then(()=>process.exit(0)));};process.once('SIGTERM',stop);process.once('SIGINT',stop);
 }

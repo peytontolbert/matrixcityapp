@@ -9,3 +9,7 @@ client_secret*.json
 .azure/
 .local/
 coverage/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal

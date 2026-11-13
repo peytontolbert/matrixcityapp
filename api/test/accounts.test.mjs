@@ -1,4 +1,4 @@
-import {WebSocket} from 'ws';
+import {WebSocket,WebSocketServer} from 'ws';
 import {test,before,after,beforeEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPair,SignJWT,jwtVerify} from 'jose';
@@ -105,11 +105,57 @@ test('registered website callback is used consistently for Google authorization 
 });
 
 test('rejected WebSocket upgrades have explicit zero-length HTTP response framing',async()=>{
- for(const path of ['/v1/quake3/socket','/v1/arcade/duck-game/socket'])for(const requestOrigin of [config.appOrigin,'https://untrusted.example']){
+ for(const path of ['/v1/quake3/socket','/v1/arcade/duck-game/socket','/v1/driving/socket'])for(const requestOrigin of [config.appOrigin,'https://untrusted.example']){
   await new Promise((resolve,reject)=>{
    const ws=new WebSocket(origin.replace('http:','ws:')+path,['json'],{origin:requestOrigin,handshakeTimeout:2000});
    ws.on('error',()=>{});ws.once('open',()=>{ws.terminate();reject(Error('Unauthenticated socket opened'))});
    ws.once('unexpected-response',(req,res)=>{try{assert.equal(res.statusCode,403);assert.equal(res.headers['content-length'],'0');res.resume();req.destroy();resolve();}catch(e){req.destroy();reject(e)}});
   });
  }
+});
+
+test('driving tickets and WebSocket proxy bind the logged-in actor and release upstream on leave',async()=>{
+ const oldOrigin=config.drivingOrigin,oldKey=config.drivingKey;config.drivingKey='test-only-driving-key';let received,upstreamClosed=false;
+ const broker=http.createServer(async(req,res)=>{let raw='';for await(const part of req)raw+=part;received=JSON.parse(raw);assert.equal(req.headers.authorization,'Bearer '+config.drivingKey);res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ticket:'t'.repeat(43),room:'nohesi-110'}));});
+ const wss=new WebSocketServer({server:broker});await new Promise(r=>broker.listen(0,'127.0.0.1',r));config.drivingOrigin='http://127.0.0.1:'+broker.address().port;
+ try{
+  const options={method:'POST',headers:{Origin:config.appOrigin,'Content-Type':'application/json'},body:JSON.stringify({room:'nohesi-110',actor:'spoof'})};
+  assert.equal((await call('/v1/driving/ticket',options)).status,401);
+  const login=await start(),signed=await complete(login),cookie=signed.headers.getSetCookie().find(x=>x.startsWith('__Host-mg_session=')).split(';')[0];
+  assert.equal((await call('/v1/driving/ticket',{...options,headers:{...options.headers,Cookie:cookie,Origin:'https://untrusted.example'}})).status,403);
+  assert.equal((await call('/v1/driving/ticket',{...options,headers:{...options.headers,Cookie:cookie}})).status,200);
+  const me=await(await call('/v1/me',{headers:{Cookie:cookie}})).json();assert.equal(received.actor,me.user.id);assert.notEqual(received.actor,'spoof');
+  const closed=new Promise(resolve=>wss.once('connection',(ws,req)=>{
+   assert.equal(req.headers['x-player'],me.user.id);assert.equal(req.headers['x-room'],'nohesi-110');assert.equal(req.headers['x-ticket'],'t'.repeat(43));
+   ws.on('message',data=>ws.send(data));ws.on('close',()=>{upstreamClosed=true;resolve();});
+  }));
+  await new Promise((resolve,reject)=>{
+   const ws=new WebSocket(origin.replace('http:','ws:')+'/v1/driving/socket',['json','mg-ticket.'+'t'.repeat(43),'room.nohesi-110'],{origin:config.appOrigin,headers:{Cookie:cookie},handshakeTimeout:2000});
+   const timer=setTimeout(()=>{ws.terminate();reject(Error('Driving proxy timeout'));},3000);
+   ws.once('error',e=>{clearTimeout(timer);reject(e);});ws.once('open',()=>ws.send('{"type":"input","sequence":1}'));
+   ws.once('message',data=>{assert.equal(JSON.parse(data).sequence,1);clearTimeout(timer);ws.close();resolve();});
+  });
+  await closed;assert.equal(upstreamClosed,true);
+  // Logout must revoke an already-open driving socket, not just future tickets.
+  const active=new WebSocket(origin.replace('http:','ws:')+'/v1/driving/socket',['json','mg-ticket.'+'t'.repeat(43),'room.nohesi-110'],{origin:config.appOrigin,headers:{Cookie:cookie},handshakeTimeout:2000});
+  await new Promise((resolve,reject)=>{active.once('open',resolve);active.once('error',reject);});
+  const revoked=new Promise((resolve,reject)=>{const timer=setTimeout(()=>{active.terminate();reject(Error('Logout did not revoke driving socket'));},20000);active.once('close',()=>{clearTimeout(timer);resolve();});});
+  assert.equal((await call('/v1/logout',{method:'POST',headers:{Origin:config.appOrigin,Cookie:cookie,'Content-Type':'application/json'},body:'{}'})).status,200);
+  await revoked;
+ }finally{config.drivingOrigin=oldOrigin;config.drivingKey=oldKey;for(const ws of wss.clients)ws.terminate();wss.close();await new Promise(r=>broker.close(r));}
+});
+
+test('native join files require login, ignore claimed identity and share the account join quota',async()=>{
+ const previous={origin:config.drivingOrigin,key:config.drivingKey};config.drivingKey='test-only-native-key';let received;
+ const broker=http.createServer(async(req,res)=>{let raw='';for await(const part of req)raw+=part;received=JSON.parse(raw);assert.equal(req.headers.authorization,'Bearer '+config.drivingKey);res.setHeader('Content-Type','application/json');res.end(JSON.stringify({schema:2,authorization:'a'.repeat(43)}));});
+ await new Promise(r=>broker.listen(0,'127.0.0.1',r));config.drivingOrigin='http://127.0.0.1:'+broker.address().port;
+ try{
+  const options={method:'POST',headers:{Origin:config.appOrigin,'Content-Type':'application/json'},body:JSON.stringify({room:'nohesi-110',actor:'spoof'})};
+  assert.equal((await call('/v1/driving/native-ticket',options)).status,401);
+  const signed=await complete(await start()),cookie=signed.headers.getSetCookie().find(x=>x.startsWith('__Host-mg_session=')).split(';')[0];
+  const authenticated={...options,headers:{...options.headers,Cookie:cookie}},me=await(await call('/v1/me',{headers:{Cookie:cookie}})).json();
+  for(let i=0;i<12;i++)assert.equal((await call('/v1/driving/native-ticket',authenticated)).status,200);
+  assert.equal(received.actor,me.user.id);assert.equal((await call('/v1/driving/ticket',authenticated)).status,429);
+  assert.equal((await call('/v1/driving/native-redeem',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,400);
+ }finally{config.drivingOrigin=previous.origin;config.drivingKey=previous.key;await new Promise(r=>broker.close(r));}
 });
