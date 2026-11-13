@@ -8,6 +8,9 @@ export function teleportOptions(room,destinations){
  for(const [i,d] of destinations.entries()){
   if(!d||typeof d.name!=='string'||!/^[A-Za-z0-9 ()-]{1,48}$/.test(d.name)||!Number.isFinite(d.heading))throw Error('Invalid destination');
   const p=matrixPointToNative(room,d.position);
+  // CSP/ComfyMap destinations are car origins. ComfyMap's own point exporter
+  // uses road height + 0.5 m so the chassis never starts inside the road.
+  p[1]+=.5;
   if(p.some(v=>Math.abs(v)>100000))throw Error('Invalid destination position');
   const heading=matrixHeadingToNative(room,d.heading)*180/Math.PI;
   lines.push(`POINT_${i}=${d.name}`,`POINT_${i}_POS=${p.map(v=>v.toFixed(4)).join(',')}`,`POINT_${i}_HEADING=${heading.toFixed(4)}`,`POINT_${i}_GROUP=Matrix Games`);
