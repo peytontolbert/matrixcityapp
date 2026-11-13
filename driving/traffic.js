@@ -1,5 +1,5 @@
 import {routeInterest} from './traffic-interest.js';
-import {TrafficOpenings,trafficWalls} from './traffic-openings.js';
+import {TrafficOpenings,trafficWalls,safeToYield} from './traffic-openings.js';
 import {reservesPassingCorridor} from './traffic-corridor.js';
 const TRAFFIC_MODELS = Object.freeze([
   'prius', 'golf7r', 'focusrs', 'a6', 'e300', 'rs318', 'aqv', 'models',
@@ -45,6 +45,24 @@ export function playerObstacle(sample, player) {
   // A parallel car in the adjacent lane is not an obstacle, even on a close pass.
   if(forward<=0||lateral>.9+halfWidth+.15)return null;
   return {gap:forward-2.25-halfLength,speed:(player.velocity?.[0]||0)*c+(player.velocity?.[1]||0)*s};
+}
+
+// Only yield when a player's swept footprint can intersect the intended merge.
+// A spherical speed-dependent radius wrongly stops AI for adjacent-lane passes.
+export function mergePlayerConflict(start,destination,speed,player){
+  if(Math.abs(player[2]-destination.position[2])>2)return false;
+  const c=Math.cos(destination.heading),s=Math.sin(destination.heading);
+  const dx=player[0]-destination.position[0],dy=player[1]-destination.position[1];
+  const sx=start.position[0]-destination.position[0],sy=start.position[1]-destination.position[1];
+  const startAlong=sx*c+sy*s,startSide=-sx*s+sy*c,along=dx*c+dy*s-startAlong,side=-dx*s+dy*c;
+  const angle=(player.heading??destination.heading)-destination.heading;
+  const halfWidth=.9+.925*Math.abs(Math.cos(angle))+2.25*Math.abs(Math.sin(angle))+.2;
+  const halfLength=2.25+2.25*Math.abs(Math.cos(angle))+.925*Math.abs(Math.sin(angle))+2.2;
+  const duration=Math.min(4,Math.max(1.5,12/Math.max(4,speed))+.75),velocity=player.velocity||[0,0];
+  const endAlong=along+(velocity[0]*c+velocity[1]*s-speed)*duration;
+  const endSide=side+(-velocity[0]*s+velocity[1]*c)*duration;
+  return Math.min(along,endAlong)<=halfLength&&Math.max(along,endAlong)>=-halfLength
+    &&Math.min(side,endSide)<=Math.max(0,startSide)+halfWidth&&Math.max(side,endSide)>=Math.min(0,startSide)-halfWidth;
 }
 
 function hashUnit(seed) {
@@ -103,6 +121,32 @@ function nearestLanePair(from, to) {
   };
 }
 
+// Downsampled lane paths can begin sharing pavement before the exported end
+// connection. Start that existing merge before vehicle footprints overlap.
+function upstreamMerge(from,to,resolved){
+  function projection(distance){
+    const source=sampleLane(from,distance);let best=null;
+    for(let i=0;i<to.points.length-1;i++){
+      if(to.cumulative[i+1]<resolved.toDistanceM-100||to.cumulative[i]>resolved.toDistanceM+20)continue;
+      const a=to.points[i],b=to.points[i+1],dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);if(length<.01)continue;
+      const heading=Math.atan2(dy,dx);if(Math.cos(heading-source.heading)<.96)continue;
+      const u=Math.max(0,Math.min(1,((source.position[0]-a[0])*dx+(source.position[1]-a[1])*dy)/(length*length)));
+      const point=[a[0]+dx*u,a[1]+dy*u,a[2]+(b[2]-a[2])*u],offset=source.position.map((v,j)=>v-point[j]);
+      if(Math.abs(offset[2])>.75||Math.abs((offset[0]*dx+offset[1]*dy)/length)>.25)continue;
+      const gap=Math.hypot(...offset);if(gap>6||best&&gap>=best.gapM)continue;
+      best={fromDistanceM:distance,toDistanceM:to.cumulative[i]+u*(to.cumulative[i+1]-to.cumulative[i]),gapM:gap};
+    }
+    return best;
+  }
+  let safe=null;
+  for(let back=Math.min(80,resolved.fromDistanceM);back>=0;back-=2){
+    const row=projection(resolved.fromDistanceM-back);if(!row)continue;
+    if(row.gapM>=3)safe=row;
+    if(row.gapM<2.6&&safe)return safe;
+  }
+  return resolved;
+}
+
 function prepareConnections(network, lanesById) {
   const outgoing = new Map();
   for (const raw of network.connections || []) {
@@ -112,8 +156,13 @@ function prepareConnections(network, lanesById) {
     const resolved = Number.isFinite(raw.fromDistanceM) && Number.isFinite(raw.toDistanceM)
       ? { fromDistanceM: raw.fromDistanceM, toDistanceM: raw.toDistanceM, gapM: raw.gapM || 0 }
       : nearestLanePair(from, to);
-    if(resolved.gapM>6 || resolved.fromDistanceM<0 || resolved.fromDistanceM>from.lengthM || resolved.toDistanceM<0 || resolved.toDistanceM>=to.lengthM)continue;
-    const connection = { ...raw, ...resolved, from, to };
+    // Exported distances are rounded to millimeters; computed splines are not.
+    // Reject genuine invalid links, but preserve authored connections at the end.
+    if(resolved.gapM>6 || resolved.fromDistanceM<0 || resolved.fromDistanceM>from.lengthM+.001 || resolved.toDistanceM<0 || resolved.toDistanceM>=to.lengthM)continue;
+    resolved.fromDistanceM=Math.min(resolved.fromDistanceM,from.lengthM-.001);
+    const mandatory=resolved.fromDistanceM>=from.lengthM-20;
+    const adjusted=mandatory||raw.connectionType==='ConnectEnd'?upstreamMerge(from,to,resolved):resolved;
+    const connection = { ...raw, ...adjusted, from, to,mandatory,authoredFromDistanceM:resolved.fromDistanceM };
     const bucket = outgoing.get(from.id) || [];
     bucket.push(connection);
     outgoing.set(from.id, bucket);
@@ -225,6 +274,9 @@ export function createAuthoritative110Traffic(network, options = {}) {
       if (nearestPlayer < minimumDistance || nearestPlayer > config.spawnDistanceM[1]) continue;
       const speedRange = config.speedKmh;
       const cruiseKph = speedRange[0] + hashUnit((serial+1) * 41) * (speedRange[1] - speedRange[0]);
+      // Do not materialize a vehicle just before an unconnected route terminus.
+      const continuation=(outgoing.get(candidate.lane.id)||[]).some(link=>link.fromDistanceM>=candidate.distance);
+      if(!candidate.lane.loop&&!continuation&&candidate.lane.lengthM-candidate.distance<Math.max(180,cruiseKph/3.6*12))continue;
       if(reservedOpening(candidate,players,cruiseKph/3.6,now))continue;
       if (!safeSpawn(candidate, players, config, recycled)) continue;
       const grounded=surface(candidate.sample);if(!grounded)continue;
@@ -235,7 +287,7 @@ export function createAuthoritative110Traffic(network, options = {}) {
         speedMps: cruiseKph / 3.6, cruiseMps: cruiseKph / 3.6,
         model: recycled?.model || models[id % models.length], protectedUntil: now + 4000 + hashUnit(id * 73) * 4000,
         sample: grounded, expired: false, wireSequence: -1, seed:id,spawnGeneration:id,
-        brake:0,merge:null,headway:.7+hashUnit(id*97)*.45,
+        brake:0,merge:null,brakingReason:'cruise',stoppedFor:0,headway:.7+hashUnit(id*97)*.45,
       };
       // Native slots retain their identity while an off-screen car is recycled.
       if(recycled){Object.assign(recycled,replacement);recycledCount++;}else agents.push(replacement);
@@ -246,17 +298,27 @@ export function createAuthoritative110Traffic(network, options = {}) {
 
   function mergeClear(agent,link,players) {
     const destination=sampleLane(link.to,link.toDistanceM);
-    if(players.some(p=>distance2(destination.position,p)<Math.max(18,Math.hypot(...(p.velocity||[0,0]))*1.5)&&Math.abs(destination.position[2]-p[2])<2))return false;
-    return !agents.some(other=>other!==agent && ((other.lane===link.to&&Math.abs(other.distance-link.toDistanceM)<Math.max(9,other.speedMps*1.25)) || (other.merge?.target===link.to&&Math.abs(other.merge.endDistance-link.toDistanceM)<25)));
+    const start=sampleLane(agent.lane,link.fromDistanceM);
+    if(players.some(p=>mergePlayerConflict(start,destination,agent.speedMps,p)))return false;
+    return !agents.some(other=>{
+      if(other===agent)return false;
+      const distance=other.merge?.target===link.to?other.merge.endDistance-(other.merge.length-other.merge.progress):other.lane===link.to?other.distance:null;
+      if(distance===null)return false;
+      const gap=distance-link.toDistanceM,closing=gap>=0?agent.speedMps-other.speedMps:other.speedMps-agent.speedMps;
+      return Math.abs(gap)<6.8+Math.max(0,closing)*1.75;
+    });
+  }
+  function choosesConnection(agent,link){
+    return link.mandatory||link.fromDistanceM>=agent.lane.lengthM-20||hashUnit(agent.seed*101+Number(link.lane2ID))<(Number.isFinite(link.probability)?link.probability:1);
   }
   function transitionAgent(agent, previousDistance,players) {
     const links = outgoing.get(agent.lane.id) || [];
-    const reached = links.filter(link => previousDistance <= link.fromDistanceM && agent.distance > link.fromDistanceM + 0.01);
+    const reached = links.filter(link => previousDistance <= link.fromDistanceM && agent.distance >= link.fromDistanceM);
     if (reached.length) {
-      const weighted = reached.filter(link => hashUnit(agent.seed * 101 + Number(link.lane2ID)) < (Number.isFinite(link.probability)?link.probability:1));
+      const weighted = reached.filter(link => choosesConnection(agent,link));
       const link = weighted[0] || (agent.distance>=agent.lane.lengthM-5?reached[0]:null);
       if(!link)return;
-      if(!mergeClear(agent,link,players)){agent.distance=Math.max(previousDistance,link.fromDistanceM-.01);agent.speedMps=0;agent.brake=1;return;}
+      if(!mergeClear(agent,link,players)){agent.distance=Math.max(previousDistance,link.fromDistanceM-.01);agent.speedMps=0;agent.brake=1;agent.brakingReason='merge';return;}
       const overshoot = Math.max(0, agent.distance - link.fromDistanceM);
       // An authored connection can bridge lane centres. Traverse its curve;
       // never jump the car sideways to the destination lane.
@@ -294,7 +356,7 @@ export function createAuthoritative110Traffic(network, options = {}) {
   function enforceLaneSpacing(config) {
     const grouped = new Map();
     for (const agent of agents) {
-      if (agent.expired) continue;
+      if (agent.expired||agent.merge) continue;
       const bucket = grouped.get(agent.lane.id) || [];
       bucket.push(agent);
       grouped.set(agent.lane.id, bucket);
@@ -305,7 +367,7 @@ export function createAuthoritative110Traffic(network, options = {}) {
         const behind = bucket[index];
         const ahead = bucket[index + 1];
         // Never correct density by teleporting an already visible car backwards.
-        if(ahead.distance-behind.distance<6){behind.speedMps=Math.min(behind.speedMps,ahead.speedMps);behind.brake=1;}
+        if(ahead.distance-behind.distance<6){behind.speedMps=Math.min(behind.speedMps,ahead.speedMps);behind.brake=1;behind.brakingReason='leader';}
       }
     }
   }
@@ -319,7 +381,24 @@ export function createAuthoritative110Traffic(network, options = {}) {
     lastPlayerCount = players.length;
     const config = preset();
     openings.update(agents,players,now);
-    const sorted = new Map();
+    const sorted = new Map(),incoming=new Map(),departing=new Map(),mergingSources=new Set(agents.filter(agent=>agent.merge).map(agent=>agent.lane.id));
+    for(const agent of agents){
+      let lane,distance,committed=false;
+      if(agent.merge){
+        lane=agent.merge.target;distance=agent.merge.endDistance-(agent.merge.length-agent.merge.progress);committed=true;
+        const rows=departing.get(agent.lane.id)||[];rows.push(agent);departing.set(agent.lane.id,rows);
+      }
+      else if(!agent.expired&&!mergingSources.has(agent.lane.id)){
+        const next=(outgoing.get(agent.lane.id)||[]).find(link=>link.fromDistanceM>=agent.distance&&choosesConnection(agent,link));
+        if(next&&next.fromDistanceM-agent.distance<80){lane=next.to;distance=next.toDistanceM-(next.fromDistanceM-agent.distance);}
+      }
+      if(lane){
+        const rows=incoming.get(lane.id)||[],previous=rows.findIndex(row=>!row.committed&&!committed&&row.agent.lane===agent.lane);
+        if(previous<0)rows.push({agent,distance,committed});
+        else if(agent.distance>rows[previous].agent.distance)rows[previous]={agent,distance,committed};
+        incoming.set(lane.id,rows);
+      }
+    }
     for (const agent of agents) {
       const bucket = sorted.get(agent.lane.id) || [];
       if(!agent.merge)bucket.push(agent);
@@ -329,23 +408,38 @@ export function createAuthoritative110Traffic(network, options = {}) {
     for (const bucket of sorted.values()) {
       for (let index = bucket.length-1; index >= 0; index--) {
         const agent = bucket[index];
-        if(agent.expired){agent.speedMps=0;continue;}
+        if(agent.expired){agent.speedMps=0;agent.brakingReason='expired';continue;}
         const ahead = bucket[index + 1];
         let target = openings.cruise(agent,agent.cruiseMps,config.speedKmh[1]/3.6,dt,players);
+        let reason='cruise';const limit=(speed,cause)=>{if(speed<target){target=speed;reason=cause;}};
         const headway=agent.headway*(presetName==='rush'?.8:presetName==='light'?1.5:1);
         if (ahead) {
           const gap = ahead.distance - agent.distance;
-          target=Math.min(target,followingSpeed(gap-4.5,ahead.speedMps,config.decelerationMps2,headway));
+          limit(followingSpeed(gap-4.5,ahead.speedMps,config.decelerationMps2,headway),'leader');
+        }
+        // Approach merges cooperatively before either lane has to stop. A
+        // committed merger is a real leader even before its lane ID changes.
+        for(const entry of incoming.get(agent.lane.id)||[]){
+          if(entry.agent===agent||entry.distance<=agent.distance||entry.distance-agent.distance>120)continue;
+          const desired=followingSpeed(entry.distance-agent.distance-4.5,entry.agent.speedMps,config.decelerationMps2,headway);
+          if(entry.committed)limit(desired,'merge');
+          // A main-lane car already too close gets to pass; holding it inside
+          // the merge exclusion zone would deadlock both stationary cars.
+          else if(entry.distance-agent.distance>=9&&safeToYield(agent,players))limit(Math.max(desired,agent.speedMps-1.2*dt),'merge-yield');
         }
         const current = sampleLane(agent.lane, agent.distance);
+        for(const leaving of departing.get(agent.lane.id)||[]){
+          const p=Object.assign([...leaving.sample.position],{heading:leaving.sample.heading,velocity:[leaving.speedMps*Math.cos(leaving.sample.heading),leaving.speedMps*Math.sin(leaving.sample.heading),0]});
+          const obstacle=playerObstacle(current,p);if(obstacle)limit(followingSpeed(obstacle.gap,obstacle.speed,config.decelerationMps2,headway),'leader');
+        }
         const lookAhead = sampleLane(agent.lane, agent.distance + clamp(agent.speedMps * 2, 22, 65));
         const bend = Math.abs(Math.atan2(Math.sin(lookAhead.heading - current.heading), Math.cos(lookAhead.heading - current.heading)));
-        target *= clamp(1 - bend * 0.7, 0.38, 1);
-        for (const player of players) {const obstacle=playerObstacle(current,player);if(obstacle)target=Math.min(target,followingSpeed(obstacle.gap,obstacle.speed,config.decelerationMps2,headway));}
-        const links=outgoing.get(agent.lane.id)||[],next=links.find(l=>l.fromDistanceM>=agent.distance);
-        if(next&&!mergeClear(agent,next,players))target=Math.min(target,followingSpeed(next.fromDistanceM-agent.distance,0,config.decelerationMps2,.5));
-        if(!agent.lane.loop&&!links.some(l=>l.fromDistanceM>=agent.distance))target=Math.min(target,followingSpeed(agent.lane.lengthM-agent.distance,0,config.decelerationMps2,.5));
-        target=openings.target(agent,target,dt,players);
+        limit(target*clamp(1-bend*.7,.38,1),reason==='cruise'?'curve':reason);
+        for (const player of players) {const obstacle=playerObstacle(current,player);if(obstacle)limit(followingSpeed(obstacle.gap,obstacle.speed,config.decelerationMps2,headway),'player');}
+        const links=outgoing.get(agent.lane.id)||[],next=links.find(l=>l.fromDistanceM>=agent.distance&&choosesConnection(agent,l));
+        if(next&&!mergeClear(agent,next,players))limit(followingSpeed(next.fromDistanceM-agent.distance,0,config.decelerationMps2,.5),'merge');
+        if(!agent.lane.loop&&!next)limit(followingSpeed(agent.lane.lengthM-agent.distance,0,config.decelerationMps2,.5),'route-end');
+        limit(openings.target(agent,target,dt,players),'opening');agent.brakingReason=reason;
         const rate = target < agent.speedMps ? config.decelerationMps2 : config.accelerationMps2;
         agent.brake=target<agent.speedMps-.3?1:0;
         agent.speedMps += clamp(target - agent.speedMps, -rate * dt, rate * dt);
@@ -356,18 +450,18 @@ export function createAuthoritative110Traffic(network, options = {}) {
         const oldLane=agent.lane;
         transitionAgent(agent, previousDistance,players);
         const nextSample=surface(agent.merge?mergeSample(agent.merge):sampleLane(agent.lane, Math.min(agent.distance,agent.lane.lengthM)));
-        if(nextSample)agent.sample=nextSample;else{agent.lane=oldLane;agent.distance=previousDistance;agent.speedMps=0;agent.brake=1;agent.merge=null;}
+        if(nextSample)agent.sample=nextSample;else{agent.lane=oldLane;agent.distance=previousDistance;agent.speedMps=0;agent.brake=1;agent.brakingReason='surface-unavailable';agent.merge=null;}
         if(!agent.lane.loop&&agent.lane.lengthM-agent.distance<2.3&&!next){agent.expired=true;}
         if(agent.expired)agent.speedMps=0;
       }
     }
     for(const agent of agents.filter(a=>a.merge)){
-      const m=agent.merge;let target=agent.cruiseMps;
+      const m=agent.merge;let target=agent.cruiseMps,reason='cruise';const limit=(speed,cause)=>{if(speed<target){target=speed;reason=cause;}};
       if(m.started===sequence)continue;
-      for(const player of players){const obstacle=playerObstacle(agent.sample,player);if(obstacle)target=Math.min(target,followingSpeed(obstacle.gap,obstacle.speed,config.decelerationMps2,agent.headway));}
-      for(const other of agents)if(other!==agent&&other.lane===m.target&&other.distance>=m.endDistance-4.5)target=Math.min(target,followingSpeed(m.length-m.progress+other.distance-m.endDistance-4.5,other.speedMps,config.decelerationMps2,agent.headway));
-      agent.brake=target<agent.speedMps-.3?1:0;agent.speedMps+=clamp(target-agent.speedMps,-config.decelerationMps2*dt,config.accelerationMps2*dt);
-      const previous=m.progress;m.progress=Math.min(m.length,m.progress+agent.speedMps*dt);const grounded=surface(mergeSample(m));if(!grounded){m.progress=previous;agent.speedMps=0;agent.brake=1;continue;}agent.sample=grounded;
+      for(const player of players){const obstacle=playerObstacle(agent.sample,player);if(obstacle)limit(followingSpeed(obstacle.gap,obstacle.speed,config.decelerationMps2,agent.headway),'player');}
+      for(const other of agents)if(other!==agent&&other.lane===m.target&&other.distance>=m.endDistance-4.5)limit(followingSpeed(m.length-m.progress+other.distance-m.endDistance-4.5,other.speedMps,config.decelerationMps2,agent.headway),'leader');
+      agent.brakingReason=reason;agent.brake=target<agent.speedMps-.3?1:0;agent.speedMps+=clamp(target-agent.speedMps,-config.decelerationMps2*dt,config.accelerationMps2*dt);
+      const previous=m.progress;m.progress=Math.min(m.length,m.progress+agent.speedMps*dt);const grounded=surface(mergeSample(m));if(!grounded){m.progress=previous;agent.speedMps=0;agent.brake=1;agent.brakingReason='surface-unavailable';continue;}agent.sample=grounded;
       if(m.progress>=m.length){agent.lane=m.target;agent.distance=m.endDistance;agent.merge=null;}
     }
     if (players.length) {
@@ -392,6 +486,7 @@ export function createAuthoritative110Traffic(network, options = {}) {
       }
     }
     enforceLaneSpacing(config);
+    for(const agent of agents)agent.stoppedFor=agent.speedMps<1?(agent.stoppedFor||0)+dt:0;
     sequence++;
   }
 
@@ -411,5 +506,10 @@ export function createAuthoritative110Traffic(network, options = {}) {
     };
   }
 
-  return { update, snapshot, setPreset, get preset() { return presetName; }, get population() { return agents.length; }, lanes, outgoing };
+  function diagnostics(){
+    const reasons={},stopped=agents.filter(agent=>agent.speedMps<1);
+    for(const agent of stopped){const reason=agent.expired?'expired':agent.brakingReason||'unknown';reasons[reason]=(reasons[reason]||0)+1;}
+    return {population:agents.length,stopped:stopped.length,reasons,longestStopSeconds:Math.max(0,...stopped.map(agent=>agent.stoppedFor||0)),stoppedAgents:stopped.slice(0,64).map(agent=>({id:agent.id,laneId:agent.lane.id,reason:agent.expired?'expired':agent.brakingReason||'unknown',seconds:agent.stoppedFor||0}))};
+  }
+  return { update, snapshot, diagnostics, setPreset, get preset() { return presetName; }, get population() { return agents.length; }, lanes, outgoing };
 }

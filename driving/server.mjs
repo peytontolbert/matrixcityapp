@@ -24,7 +24,7 @@ export function createDrivingServer({sessions,assets,key,staticRoot=null}){
    if(req.method==='GET'&&url.pathname==='/health')return json(res,200,{ok:true,ready:[...sessions.values()].every(s=>s.ready)});
    if(req.method==='GET'&&url.pathname==='/diagnostics'){
     if(!authorized(req))return json(res,403,{error:'Forbidden'});
-    return json(res,200,{sessions:[...sessions.values()].map(s=>({room:s.room,ready:s.ready,environment:s.relay.environment,poseOffsets:s.relay.poseOffsets,native:s.relay.nativeVehicles().map(v=>({id:v.id,coupled:v.coupled,position:v.position,velocity:v.velocity}))}))});
+    return json(res,200,{sessions:[...sessions.values()].map(s=>({room:s.room,ready:s.ready,environment:s.relay.environment,poseOffsets:s.relay.poseOffsets,traffic:s.traffic?.diagnostics?.(),native:s.relay.nativeVehicles().map(v=>({id:v.id,coupled:v.coupled,position:v.position,velocity:v.velocity,heading:v.heading,sampleTime:v.sampleTime}))}))});
    }
    if(req.method==='POST'&&url.pathname==='/traffic-settings'){
     if(!authorized(req))return json(res,403,{error:'Forbidden'});
