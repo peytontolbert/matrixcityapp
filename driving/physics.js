@@ -3,6 +3,13 @@ import {validateAssettoDynamics} from './vendor/js/gameplay/assetto_dynamics_val
 
 export const STEP=1/120;
 export const MODEL='06_ygt_53_nissan_350z';
+// Both client types must use the same body in the shared contact solver.
+// These dimensions remain the existing collision proxy, not collider.kn5 geometry.
+export function vehicleBody(profile,model=MODEL) {
+ if(model!==MODEL)throw Error('No verified collision profile for '+model);
+ if(!Number.isFinite(profile?.mass)||profile.mass<=0)throw Error('Authored vehicle mass is required');
+ return {mass:profile.mass,length:4.4,width:1.85,height:1.5};
+}
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export function controls(raw) {
  if(!raw||raw.type!=='input'||!Number.isSafeInteger(raw.sequence)||raw.sequence<0)throw Error('Invalid input');
@@ -15,7 +22,7 @@ export const NEUTRAL={throttle:0,brake:1,steer:0,handbrake:0,gearRequest:1,autoR
 export function createCar(id,spawn,profile) {
  const validation=validateAssettoDynamics(profile);if(!validation.valid)throw Error('Invalid car dynamics: '+validation.errors.join('; '));
  return {id,kind:'browser',model:MODEL,position:[...spawn.position],heading:spawn.heading,velocity:[0,0,0],verticalSpeed:0,
-  state:createAssettoVehicleState(),mass:profile.mass,length:4.4,width:1.85,height:1.5,profile,input:{...NEUTRAL},lastInput:0,lastSequence:-1,pitch:0,roll:0,contacts:0,damage:0};
+  state:createAssettoVehicleState(),...vehicleBody(profile),profile,input:{...NEUTRAL},lastInput:0,lastSequence:-1,pitch:0,roll:0,contacts:0,damage:0};
 }
 export function wheelContacts(car,ground) {
  const p=car.profile,c=Math.cos(car.heading),s=Math.sin(car.heading),contacts={},hits=[];
@@ -79,9 +86,9 @@ export function resolveCars(a,b) {
  }
  const ia=a.kinematic||a.streaming?0:1/a.mass,ib=b.kinematic||b.streaming?0:1/b.mass,total=ia+ib;if(!total)return true;
  const relative=((b.streaming?0:b.velocity[0])-(a.streaming?0:a.velocity[0]))*normal[0]+((b.streaming?0:b.velocity[1])-(a.streaming?0:a.velocity[1]))*normal[1];
- // External traffic follows a route; reflecting a native car off that infinite
- // mass creates an artificial rebound. Match contact-normal speed instead.
- const restitution=(a.kind==='native'&&b.kind==='traffic'||b.kind==='native'&&a.kind==='traffic')?0:.08;
+ // External traffic follows a route; use the same non-bouncing contact for
+ // browser and native drivers. Client type must not change collision response.
+ const restitution=(a.kind==='traffic'||b.kind==='traffic')?0:.08;
  const impulse=relative<0?-(1+restitution)*relative/total:0;
  for(const [car,inv,sign] of [[a,ia,-1],[b,ib,1]])if(inv){
   for(let k=0;k<2;k++){car.position[k]+=sign*normal[k]*(depth+.002)*inv/total;car.velocity[k]+=sign*normal[k]*impulse*inv;}

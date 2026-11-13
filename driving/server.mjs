@@ -7,9 +7,10 @@ import {NativeJoins} from './native-joins.mjs';
 import {pathToFileURL} from 'node:url';
 import {WebSocketServer,WebSocket} from 'ws';
 import {Assets} from './assets.js';
-import {loadWorld,jsonAsset} from './world.js';
+import {loadWorld} from './world.js';
 import {DrivingSession} from './sessions.js';
 import {AssettoRelay} from './bridge/relay.mjs';
+import {VEHICLE_PROFILE,verifiedHandling} from './vehicle-profile.mjs';
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
 export function createDrivingServer({sessions,assets,key,staticRoot=null}){
  if(!key||key.length<43)throw Error('Private driving service key required');
@@ -97,7 +98,7 @@ export function createDrivingServer({sessions,assets,key,staticRoot=null}){
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const config=JSON.parse(await readFile(process.env.MATRIX_DRIVING_CONFIG,'utf8'));
  if(config.assets.indexFile)config.assets.index=JSON.parse(await readFile(config.assets.indexFile,'utf8'));
- const assets=new Assets(config.assets);assets.install();const profile=(await jsonAsset('physics/assetto-corsa/06_ygt_53_nissan_350z.json')).assettoHandling;
+ const assets=new Assets(config.assets);assets.install();const profile=verifiedHandling((await assets.get(VEHICLE_PROFILE.path)).bytes);
  const boardFile=config.leaderboardDb||config.leaderboardFile;
  if(!boardFile)throw Error('Persistent leaderboardDb is required');
  const leaderboard=new DrivingLeaderboard(boardFile);await leaderboard.load();

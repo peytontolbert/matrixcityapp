@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DrivingSession} from '../sessions.js';
+import {MODEL} from '../physics.js';
 const fixture=()=>{
  let time=100000;
- const session=new DrivingSession({room:'nohesi-110',world:{network:{schema:'matrix-city-110-gameplay-v1',lanes:[]},spawn:{position:[0,0,0],heading:0},focus:async()=>{}},profile:{},clock:()=>time,
+ const session=new DrivingSession({room:'nohesi-110',world:{network:{schema:'matrix-city-110-gameplay-v1',lanes:[]},spawn:{position:[0,0,0],heading:0},focus:async()=>{}},profile:{mass:1710},clock:()=>time,
   relay:{nativeVehicles:()=>[],exchange:async()=>({ready:true,rejected:[]})}});
  session.ready=true;return {session,advance:n=>time+=n};
 };
@@ -42,7 +43,7 @@ test('slow collision downloads never block native relay updates',async()=>{
 
 test('native clean-pass score reaches both browser snapshot and authenticated native HUD frame',async()=>{
  const {session:s,advance}=fixture();let x=0,packet;
- s.relay.nativeVehicles=()=>[{id:'native:0',account:'private-native-account',kind:'native',model:'car',coupled:true,position:[x,0,0],velocity:[30,0,0],heading:0,sampleTime:x+1}];
+ s.relay.nativeVehicles=()=>[{id:'native:0',account:'private-native-account',kind:'native',model:MODEL,coupled:true,position:[x,0,0],velocity:[30,0,0],heading:0,sampleTime:x+1}];
  s.traffic={update(){},snapshot:()=>({agents:[{id:1,x:40,y:2.5,feetZ:0,heading:0,pitch:0,roll:0,speedMps:10,spawnGeneration:1}]})};
  s.relay.exchange=async(vehicles,scores)=>{packet=scores;return {ready:true,rejected:[]};};
  for(x=0;x<65;x++){advance(1000/30);s.lastExchange=s.clock();s.advance(1/30);}
@@ -50,4 +51,15 @@ test('native clean-pass score reaches both browser snapshot and authenticated na
  assert.equal(packet[0].passes,1);assert.ok(packet[0].score>0);assert.equal(packet[0].rank,1);
  const snapshot=s.snapshot();assert.equal(snapshot.scores[0].score,packet[0].score);assert.equal(snapshot.leaderboard[0].score,packet[0].score);
  assert.ok(!JSON.stringify(snapshot).includes('private-native-account'));
+});
+
+test('native shared contacts use the loaded car mass and refresh changed occupants/coupling',()=>{
+ const {session:s}=fixture();s.lastExchange=s.clock();s.profile.mass=1837;
+ const sample={id:'native:0',model:MODEL,account:'first',coupled:true,position:[0,0,0],velocity:[0,0,0],heading:0,sampleTime:1};
+ s.relay.nativeVehicles=()=>[sample];s.advance(0);
+ const first=s.nativeBodies.get(sample.id);assert.equal(first.mass,1837);assert.equal(first.kinematic,false);
+ s.advance(0);assert.equal(s.nativeBodies.get(sample.id),first,'Repeated physics samples retain resolved contacts');
+ sample.coupled=false;s.advance(0);assert.equal(s.nativeBodies.get(sample.id).kinematic,true);
+ sample.account='replacement';s.advance(0);assert.equal(s.nativeBodies.get(sample.id).account,'replacement');
+ sample.model='unreviewed-car';assert.throws(()=>s.advance(0),/No verified collision profile/);
 });
