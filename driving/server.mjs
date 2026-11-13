@@ -1,17 +1,18 @@
 import http from 'node:http';
 import {DrivingLeaderboard} from './scoring.mjs';
 import {readFile,realpath} from 'node:fs/promises';
-import {resolve,sep} from 'node:path';
+import {resolve,sep,isAbsolute} from 'node:path';
 import {timingSafeEqual} from 'node:crypto';
 import {NativeJoins} from './native-joins.mjs';
 import {pathToFileURL} from 'node:url';
 import {WebSocketServer,WebSocket} from 'ws';
 import {Assets} from './assets.js';
-import {loadWorld,jsonAsset} from './world.js';
+import {loadWorld} from './world.js';
 import {DrivingSession} from './sessions.js';
 import {AssettoRelay} from './bridge/relay.mjs';
+import {VEHICLE_PROFILE,verifiedHandling,verifyNativeArchive} from './vehicle-profile.mjs';
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
-export function createDrivingServer({sessions,assets,key,staticRoot=null}){
+export function createDrivingServer({sessions,assets,key,staticRoot=null,physicsIdentity=null}){
  if(!key||key.length<43)throw Error('Private driving service key required');
  const expected=Buffer.from('Bearer '+key),authorized=req=>{const b=Buffer.from(req.headers.authorization||'');return b.length===expected.length&&timingSafeEqual(b,expected);};
  const sockets=new Set(),wss=new WebSocketServer({noServer:true,maxPayload:1024,perMessageDeflate:false});
@@ -21,7 +22,7 @@ export function createDrivingServer({sessions,assets,key,staticRoot=null}){
   try{
    const url=new URL(req.url,'http://localhost');
    if(req.method==='GET'&&url.pathname==='/sessions')return json(res,200,{sessions:[...sessions.values()].map(s=>s.info()),loginRequired:true});
-   if(req.method==='GET'&&url.pathname==='/health')return json(res,200,{ok:true,ready:[...sessions.values()].every(s=>s.ready)});
+   if(req.method==='GET'&&url.pathname==='/health')return json(res,200,{ok:true,ready:[...sessions.values()].every(s=>s.ready),physics:physicsIdentity});
    if(req.method==='GET'&&url.pathname==='/diagnostics'){
     if(!authorized(req))return json(res,403,{error:'Forbidden'});
     return json(res,200,{sessions:[...sessions.values()].map(s=>({room:s.room,ready:s.ready,environment:s.relay.environment,poseOffsets:s.relay.poseOffsets,traffic:s.traffic?.diagnostics?.(),native:s.relay.nativeVehicles().map(v=>({id:v.id,coupled:v.coupled,position:v.position,velocity:v.velocity,heading:v.heading,sampleTime:v.sampleTime}))}))});
@@ -96,13 +97,16 @@ export function createDrivingServer({sessions,assets,key,staticRoot=null}){
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const config=JSON.parse(await readFile(process.env.MATRIX_DRIVING_CONFIG,'utf8'));
+ if(typeof config.nativeCarDataFile!=='string'||!isAbsolute(config.nativeCarDataFile))throw Error('Absolute nativeCarDataFile for the native server car archive is required');
+ const nativeArchiveSha256=verifyNativeArchive(await readFile(config.nativeCarDataFile));
  if(config.assets.indexFile)config.assets.index=JSON.parse(await readFile(config.assets.indexFile,'utf8'));
- const assets=new Assets(config.assets);assets.install();const profile=(await jsonAsset('physics/assetto-corsa/06_ygt_53_nissan_350z.json')).assettoHandling;
+ const assets=new Assets(config.assets);assets.install();const profile=verifiedHandling((await assets.get(VEHICLE_PROFILE.path)).bytes);
  const boardFile=config.leaderboardDb||config.leaderboardFile;
  if(!boardFile)throw Error('Persistent leaderboardDb is required');
  const leaderboard=new DrivingLeaderboard(boardFile);await leaderboard.load();
  const sessions=new Map();for(const entry of config.sessions){const trafficCapacity=entry.slots.filter(s=>s.kind==='traffic').length;if(entry.trafficCapacity!==undefined&&entry.trafficCapacity!==trafficCapacity)throw Error('Traffic population must equal reserved native slots');const world=await loadWorld(entry.room),relay=new AssettoRelay(entry);const session=new DrivingSession({...entry,trafficCapacity,world,profile,relay,leaderboard});sessions.set(entry.room,session);await session.exchange();}
- const server=createDrivingServer({...config,assets,sessions,key:await readFile(config.keyFile,'utf8')});
+ const physicsIdentity={model:VEHICLE_PROFILE.model,profileSha256:VEHICLE_PROFILE.profileSha256,nativeArchiveSha256,dataIdentityVerified:true,nativeHandlingParityVerified:false};
+ const server=createDrivingServer({...config,assets,sessions,physicsIdentity,key:await readFile(config.keyFile,'utf8')});
  server.listen(config.port||4192,config.host||'127.0.0.1',()=>console.log('Matrix Games driving ready'));
  server.on('close',()=>{void leaderboard.close().catch(()=>console.error('Leaderboard close failed'));});
  process.once('SIGTERM',()=>server.stop());process.once('SIGINT',()=>server.stop());

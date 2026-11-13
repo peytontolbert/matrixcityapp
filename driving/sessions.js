@@ -2,7 +2,7 @@ import {randomBytes,createHash} from 'node:crypto';
 import {TrafficSurface} from './traffic-surface.js';
 import {CutUpScoring,DrivingLeaderboard} from './scoring.mjs';
 import {createAuthoritative110Traffic} from './traffic.js';
-import {createCar,controls,NEUTRAL,STEP,stepCar,resolveCars,wireCar} from './physics.js';
+import {createCar,controls,NEUTRAL,STEP,stepCar,resolveCars,wireCar,vehicleBody} from './physics.js';
 const hash=t=>createHash('sha256').update(t).digest('hex');
 export class DrivingSession {
  constructor({room,world,profile,relay,capacity=4,trafficCapacity=8,trafficPreset='heavy',native,clock=Date.now,leaderboard=new DrivingLeaderboard()}){
@@ -55,7 +55,7 @@ export class DrivingSession {
   this.sweep();this.debt+=Math.min(.1,Math.max(0,elapsed));
   const now=this.clock();if(now-this.lastExchange>1500)this.ready=false;
   this.nativeBodies??=new Map();const samples=this.relay.nativeVehicles(),liveNative=new Set(samples.map(v=>v.id));for(const id of this.nativeBodies.keys())if(!liveNative.has(id))this.nativeBodies.delete(id);
-  const natives=samples.map(v=>{const previous=this.nativeBodies.get(v.id);if(previous&&previous.sampleTime===v.sampleTime)return previous;const body={...v,kind:'native',kinematic:!v.coupled,mass:1510,length:4.4,width:1.85,height:1.5};this.nativeBodies.set(v.id,body);return body;});
+  const natives=samples.map(v=>{const previous=this.nativeBodies.get(v.id);if(previous&&previous.sampleTime===v.sampleTime&&previous.model===v.model&&previous.account===v.account&&previous.coupled===v.coupled)return previous;const body={...v,kind:'native',kinematic:!v.coupled,...vehicleBody(this.profile,v.model)};this.nativeBodies.set(v.id,body);return body;});
   if(!this.ready){for(const p of this.players.values())p.car.input={...NEUTRAL};this.debt=0;return;}
   const nativeBefore=new Map(natives.map(v=>[v.id,[...v.velocity]]));
   const interest=[...this.players.values()].map(p=>({x:p.car.position[0],y:p.car.position[1],feetZ:p.car.position[2],velocity:p.car.velocity,heading:p.car.heading})).concat(natives.map(v=>({x:v.position[0],y:v.position[1],feetZ:v.position[2],velocity:v.velocity,heading:v.heading})));
