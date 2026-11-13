@@ -20,6 +20,16 @@ test('native weather clamps malformed inputs and maps the solar up-axis',()=>{
  const n=nativeEnvironment({hour:14,rain:5,wetness:-1,grip:NaN});assert.equal(n.rain,1);assert.equal(n.wetness,0);assert.equal(n.grip,1);
  const e=new DrivingEnvironment('nohesi-110').update({...n,cloud:1},0);assert.ok(e.sun[2]>0);assert.equal(e.rain,1);assert.ok(e.haze>.0003);
 });
+
+test('native traffic rear-end contacts remove closing speed without reflecting the driver',()=>{
+ for(const speed of [25,50,80]){
+  const native={id:'native:0',kind:'native',position:[0,0,0],velocity:[speed,0,2],heading:0,mass:1510,length:4.4,width:1.85,height:1.5};
+  const traffic={id:'traffic:0',kind:'traffic',position:[4,0,0],velocity:[20,0,0],heading:0,kinematic:true,mass:1450,length:4.5,width:1.8,height:1.5};
+  assert.equal(resolveCars(native,traffic),true);assert.ok(Math.abs(native.velocity[0]-20)<1e-8);assert.equal(native.velocity[2],2);
+  for(let i=0;i<12;i++)resolveCars(native,traffic);
+  assert.ok(Math.abs(native.velocity[0]-20)<1e-8);assert.equal(native.velocity[2],2);
+ }
+});
 test('world shadow camera remains stable at distant 415 coordinates',()=>{
  const identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],center=[-52245,31809,607];
  const c=shadowCamera(identity,center,[.4,-.5,1],2048,160);assert.ok([...c.matrix].every(Number.isFinite));assert.equal(inShadowBounds([...center.map(v=>v-2),...center.map(v=>v+2)],c),true);assert.equal(inShadowBounds([0,0,0,1,1,1],c),false);

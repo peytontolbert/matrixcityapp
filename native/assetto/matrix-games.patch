@@ -37,10 +37,10 @@ index a761e52..0d3c9c4 100644
  }
 diff --git a/AssettoServer.Tests/MatrixBridgeTests.cs b/AssettoServer.Tests/MatrixBridgeTests.cs
 new file mode 100644
-index 0000000..42c5abf
+index 0000000..5f6587c
 --- /dev/null
 +++ b/AssettoServer.Tests/MatrixBridgeTests.cs
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,89 @@
 +using AssettoServer.Server;
 +using NUnit.Framework;
 +using System.Text.Json;
@@ -75,9 +75,11 @@ index 0000000..42c5abf
 +    }
 +    [Test] public void CoupledImpactsRequireAccountAndNativeSlot()
 +    {
-+        var impact=new MatrixImpact(0,Guid.NewGuid().ToString(),[2,0,-1]);
++        var impact=new MatrixImpact(0,Guid.NewGuid().ToString(),[2,0,-1],[20,0,0]);
 +        Assert.That(Gate().Accept(Frame() with {Impacts=[impact]},Now),Is.True);
 +        Assert.That(Gate().Accept(Frame() with {Impacts=[impact with {Slot=16}]},Now),Is.False);
++        Assert.That(Gate().Accept(Frame() with {Impacts=[impact with {TargetVelocity=[float.NaN,0,0]}]},Now),Is.False);
++        Assert.That(Gate().Accept(Frame() with {Impacts=[impact with {Delta=[0,1,0]}]},Now),Is.False);
 +        Assert.That(Gate().Accept(Frame() with {Impacts=[impact with {Account="anonymous"}]},Now),Is.False);
 +        Assert.That(Gate().Accept(Frame() with {Impacts=[impact,impact]},Now),Is.False);
 +        Assert.That(Gate().Accept(Frame() with {Impacts=[impact with {Delta=[80,80,80]}]},Now),Is.False);
@@ -168,7 +170,7 @@ index 0000000..62a42dc
 +}
 diff --git a/AssettoServer.Tests/matrix_hud_test.lua b/AssettoServer.Tests/matrix_hud_test.lua
 new file mode 100644
-index 0000000..63bc996
+index 0000000..4af90d6
 --- /dev/null
 +++ b/AssettoServer.Tests/matrix_hud_test.lua
 @@ -0,0 +1,14 @@
@@ -179,19 +181,19 @@ index 0000000..63bc996
 +ac={StructItem={key=function(x)return x end,int32=function()end,float=function()end,string=function()end},getCar=function()return car end,getUI=function()return {windowSize=vec2(1920,1080)}end,OnlineEvent=function(_,fn)event=fn end}
 +ui={KeyIndex={F7=118},keyPressed=function()local v=key;key=false;return v end,drawCircleFilled=function()end,drawLine=function()end,dwriteDrawText=function(t)table.insert(texts,t)end,onExclusiveHUD=function(fn)callback=fn;return {dispose=function()disposed=true end}end}
 +script={};dofile('AssettoServer/Server/Lua/matrix_hud.lua')
-+assert(callback('pause')==nil);assert(callback('game')==true);assert(table.concat(texts,'|'):find('123'));assert(table.concat(texts,'|'):find('4'))
++assert(callback('pause')==nil);assert(callback('game')=='apps','HUD must keep ComfyMap and other apps visible');assert(table.concat(texts,'|'):find('123'));assert(table.concat(texts,'|'):find('4'))
 +assert(not table.concat(texts,'|'):find('Connecting'));assert(table.concat(texts,'|'):find('SCORE UPDATES UNAVAILABLE'))
 +event(nil,{score=250,combo=1.5,passes=3,rank=1,first='Driver ABCDEF',firstScore=250});texts={};callback('game');assert(table.concat(texts,'|'):find('250'))
 +assert(table.concat(texts,'|'):find('ROOM BEST'));assert(not table.concat(texts,'|'):find('UNAVAILABLE'))
 +script.update(4);texts={};callback('game');assert(table.concat(texts,'|'):find('250'));assert(table.concat(texts,'|'):find('SCORE UPDATES UNAVAILABLE'))
-+key=true;assert(callback('game')==nil);key=true;assert(callback('game')==true);script.release();assert(disposed)
++key=true;assert(callback('game')==nil);key=true;assert(callback('game')=='apps');script.release();assert(disposed)
 +print('Native HUD speed/gear/score, pause and restore passed')
 diff --git a/AssettoServer.Tests/matrix_physics_test.lua b/AssettoServer.Tests/matrix_physics_test.lua
 new file mode 100644
-index 0000000..654cbf0
+index 0000000..b175931
 --- /dev/null
 +++ b/AssettoServer.Tests/matrix_physics_test.lua
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,50 @@
 +-- Execute the actual companion against the documented CSP surface. No game needed.
 +local vector={};vector.__index=vector
 +local function v(x,y,z)return setmetatable({x=x,y=y,z=z},vector)end
@@ -208,14 +210,27 @@ index 0000000..654cbf0
 +ac.OnlineEvent=function(layout,callback)local name=layout[1].key;assert(type(callback)=='function');events[name]=callback;return function(data,repeatFlag,target)assert(target==255,'Telemetry must be server-targeted');reports[name]=data;return true end end
 +physics={allowed=function()return true end,disableCarCollisions=function(index,disable)disabled[index]=disable end,setCarVelocity=function(index,velocity)assert(index==0);cars[0].velocity=velocity;changes=changes+1 end}
 +script={};local f=assert(io.open(arg[1]));local source=f:read('*a');f:close();assert(load(source:gsub('__MATRIX_SLOTS__','{1,2}'),'matrix_physics'))()
-+script.update(.1);assert(reports.MG_PhysicsState_v1.ready);assert(reports.MG_PhysicsState_v1.feet.y==0);assert(disabled[1]==false)
-+local receive=events.MG_PhysicsImpulse_v1
-+receive(cars[1],{sequence=1,delta=v(3,0,0)});assert(changes==0,'Client spoof must be rejected')
-+receive(nil,{sequence=1,delta=v(3,0,0)});script.update(.1);assert(changes==1 and disabled[1]==true and reports.MG_PhysicsState_v1.ack==1)
-+receive(nil,{sequence=1,delta=v(3,0,0)});assert(changes==1,'Duplicate impulse must be rejected')
-+receive(nil,{sequence=2,delta=v(81,0,0)});assert(changes==1,'Unbounded impulse must be rejected')
++script.update(.1);assert(reports.MG_PhysicsState_v2.ready);assert(reports.MG_PhysicsState_v2.feet.y==0);assert(disabled[1]==false)
++local receive=events.MG_PhysicsImpulse_v2
++receive(cars[1],{sequence=1,delta=v(3,0,0),targetVelocity=v(3,0,0)});assert(changes==0,'Client spoof must be rejected')
++receive(nil,{sequence=1,delta=v(3,0,0),targetVelocity=v(3,0,0)});script.update(.1);assert(changes==1 and disabled[1]==true and reports.MG_PhysicsState_v2.ack==1)
++receive(nil,{sequence=1,delta=v(3,0,0),targetVelocity=v(3,0,0)});assert(changes==1,'Duplicate impulse must be rejected')
++receive(nil,{sequence=2,delta=v(81,0,0),targetVelocity=v(81,0,0)});assert(changes==1,'Unbounded impulse must be rejected')
 +script.update(.8);assert(disabled[1]==false,'Expired lease must restore native collision handling')
-+receive(nil,{sequence=3,delta=v(0,0,0)});script.update(.1);assert(disabled[1]);script.release();assert(disabled[1]==false)
++receive(nil,{sequence=3,delta=v(0,0,0),targetVelocity=v(0,0,0)});script.update(.1);assert(disabled[1]);script.release();assert(disabled[1]==false)
++-- A fresh packet sequence with stale physics must be idempotent too.
++receive(nil,{sequence=4,delta=v(3,0,0),targetVelocity=v(3,0,0)})
++assert(changes==1,'Stale target must not stack another velocity kick')
++cars[0].velocity=v(50,2,0)
++receive(nil,{sequence=5,delta=v(-40,0,0),targetVelocity=v(10,2,0)})
++assert(cars[0].velocity.x==42 and cars[0].velocity.y==2,'Severe contacts are bounded and preserve vertical physics')
++for seq=6,20 do receive(nil,{sequence=seq,delta=v(-40,0,0),targetVelocity=v(10,2,0)}) end
++assert(cars[0].velocity.x==10,'Repeated delayed impacts must stop at traffic speed, never reverse the car')
++cars[0].velocity=v(5,2,0)
++receive(nil,{sequence=21,delta=v(-40,0,0),targetVelocity=v(10,2,0)})
++assert(cars[0].velocity.x==5,'Already separating contact must not alter velocity')
++receive(nil,{sequence=22,delta=v(0,5,0),targetVelocity=v(5,7,0)})
++assert(cars[0].velocity.y==2,'Bridge must never launch a car vertically')
 +print('Native companion: grounded telemetry, server-only impulses, replay rejection and lease restoration passed')
 +
 +assert(reports.MG_PoseCalibration_v1==nil,'Production must never calibrate or send calibration packets')
@@ -229,7 +244,6 @@ index 0000000..654cbf0
 +script.update(.1)
 +assert(math.abs(reports.MG_PoseCalibration_v1.offset-.5)<.00001,'Calibration must use physics origin to tyre bottoms')
 +print('Native performance: bounded car scans, no production calibration, correct wheel-bottom calibration passed')
-+
 diff --git a/AssettoServer/AssettoServer.csproj b/AssettoServer/AssettoServer.csproj
 index a820b0d..a68945d 100644
 --- a/AssettoServer/AssettoServer.csproj
@@ -494,10 +508,10 @@ index 0000000..c2ebfa9
 +}
 diff --git a/AssettoServer/Server/Lua/matrix_hud.lua b/AssettoServer/Server/Lua/matrix_hud.lua
 new file mode 100644
-index 0000000..43c5e39
+index 0000000..e509c13
 --- /dev/null
 +++ b/AssettoServer/Server/Lua/matrix_hud.lua
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,36 @@
 +-- Session-only Matrix Games HUD. F7 restores the user's normal HUD immediately.
 +local enabled=true
 +local score,age={score=0,combo=1,passes=0,rank=0},100
@@ -530,15 +544,16 @@ index 0000000..43c5e39
 +local hud=ui.onExclusiveHUD(function(mode)
 + if ui.keyPressed(ui.KeyIndex.F7) then enabled=not enabled end
 + if mode~='game' or not enabled then return end
-+ draw();return true
++ -- Preserve CSP apps, including ComfyMap and its teleport controls.
++ draw();return 'apps'
 +end)
 +function script.release()hud:dispose()end
 diff --git a/AssettoServer/Server/Lua/matrix_physics.lua b/AssettoServer/Server/Lua/matrix_physics.lua
 new file mode 100644
-index 0000000..76b3144
+index 0000000..f9549c6
 --- /dev/null
 +++ b/AssettoServer/Server/Lua/matrix_physics.lua
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,90 @@
 +-- Matrix Games: server-authoritative contacts with external vehicles only.
 +-- Native/native and native/track collision solvers remain in Assetto Corsa.
 +local slots = __MATRIX_SLOTS__
@@ -553,17 +568,26 @@ index 0000000..76b3144
 +local calibrationEnabled=__MATRIX_CALIBRATION__
 +local calibrationLogged={}
 +local sendCalibration=ac.OnlineEvent({ac.StructItem.key('MG_PoseCalibration_v1'),slot=ac.StructItem.byte(),offset=ac.StructItem.float()},function() end)
-+local sendState = ac.OnlineEvent({ac.StructItem.key('MG_PhysicsState_v1'),
++local sendState = ac.OnlineEvent({ac.StructItem.key('MG_PhysicsState_v2'),
 +  ready=ac.StructItem.boolean(), feet=ac.StructItem.vec3(), velocity=ac.StructItem.vec3(), offset=ac.StructItem.float(), ack=ac.StructItem.int32(),collision=ac.StructItem.boolean()}, function() end)
 +local enabled = physics.allowed() and ac.getPatchVersionCode() >= 3424
 +ac.log('[Matrix physics] loaded; physics permission='..tostring(enabled))
-+ac.OnlineEvent({ac.StructItem.key('MG_PhysicsImpulse_v1'), sequence=ac.StructItem.int32(), delta=ac.StructItem.vec3()}, function(sender, data)
++ac.OnlineEvent({ac.StructItem.key('MG_PhysicsImpulse_v2'), sequence=ac.StructItem.int32(), delta=ac.StructItem.vec3(), targetVelocity=ac.StructItem.vec3()}, function(sender, data)
 +  if sender ~= nil or not enabled or data.sequence <= sequence then return end
-+  local d=data.delta
-+  if d.x~=d.x or d.y~=d.y or d.z~=d.z or d:length()>80 then return end
++  local d,t=data.delta,data.targetVelocity
++  if not t or d.x~=d.x or d.y~=d.y or d.z~=d.z or d:length()>80 or math.abs(d.y)>.001 then return end
++  if t.x~=t.x or t.y~=t.y or t.z~=t.z or math.abs(t.x)>200 or math.abs(t.y)>200 or math.abs(t.z)>200 then return end
 +  if sequence==0 then ac.log('[Matrix physics] server lease acknowledged') end
 +  sequence=data.sequence; lease=elapsed
-+  if d:lengthSquared()>0 then physics.setCarVelocity(0,ac.getCar(0).velocity+d);ac.log('[Matrix physics] contact impulse '..sequence..' dv='..d:length()) end
++  if d:lengthSquared()>.000001 then
++    -- Delayed/repeated reports must not add the same collision impulse again.
++    -- Correct only toward the solver's target along the contact direction;
++    -- preserve suspension velocity and cap any single correction at 8 m/s.
++    local n=d*(1/d:length());n.y=0
++    local current=ac.getCar(0).velocity
++    local change=math.min(8,d:length(),math.max(0,(t-current):dot(n)))
++    if change>.001 then physics.setCarVelocity(0,current+n*change);ac.log('[Matrix physics] bounded contact '..sequence..' dv='..change) end
++  end
 +end)
 +local function collisions(disable)
 +  for _,slot in ipairs(slots) do
@@ -622,7 +646,7 @@ index 0000000..76b3144
 +function script.release() if enabled then collisions(false) end end
 diff --git a/AssettoServer/Server/MatrixBridge.cs b/AssettoServer/Server/MatrixBridge.cs
 new file mode 100644
-index 0000000..1019743
+index 0000000..1a601c5
 --- /dev/null
 +++ b/AssettoServer/Server/MatrixBridge.cs
 @@ -0,0 +1,146 @@
@@ -666,7 +690,7 @@ index 0000000..1019743
 +    private MatrixFrameGate? _validator;
 +    private byte[]? _tokenHash;
 +    private MatrixFrame? _pending;
-+    private readonly Dictionary<(byte Slot,string Account),(Vector3 Delta,long Time)> _pendingImpacts=new();
++    private readonly Dictionary<(byte Slot,string Account),(Vector3 Delta,Vector3 TargetVelocity,long Time)> _pendingImpacts=new();
 +    private long _lastFrame;
 +    private long _applied;
 +    private MatrixSnapshot? _snapshot;
@@ -684,7 +708,7 @@ index 0000000..1019743
 +        {
 +            if (_validator == null || !_validator.Accept(frame, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())) return null;
 +            _pending = frame;
-+            foreach(var impact in frame.Impacts??[]){var key=(impact.Slot,impact.Account);var sum=new Vector3(impact.Delta[0],impact.Delta[1],impact.Delta[2]);if(_pendingImpacts.TryGetValue(key,out var old)&&frame.IssuedAt-old.Time<500)sum+=old.Delta;if(sum.Length()>80)sum=Vector3.Normalize(sum)*80;_pendingImpacts[key]=(sum,frame.IssuedAt);}
++            foreach(var impact in frame.Impacts??[]){var key=(impact.Slot,impact.Account);var delta=new Vector3(impact.Delta[0],impact.Delta[1],impact.Delta[2]);var target=new Vector3(impact.TargetVelocity[0],impact.TargetVelocity[1],impact.TargetVelocity[2]);_pendingImpacts[key]=(delta,target,frame.IssuedAt);}
 +            return _snapshot;
 +        }
 +    }
@@ -724,7 +748,7 @@ index 0000000..1019743
 +    {
 +        var settings = MatrixBridgeSettings.Current!;
 +        MatrixFrame? frame;
-+        Dictionary<(byte Slot,string Account),(Vector3 Delta,long Time)> impacts;
++        Dictionary<(byte Slot,string Account),(Vector3 Delta,Vector3 TargetVelocity,long Time)> impacts;
 +        lock (_gate) { frame = _pending; _pending = null;impacts=new(_pendingImpacts);_pendingImpacts.Clear(); }
 +        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 +        if (frame != null)
@@ -737,7 +761,7 @@ index 0000000..1019743
 +                    var client=car.Client!;if(!_physics.TryGetValue(client,out var state)||!state.State.Ready||now-state.Time>=500)continue;
 +                    var hasImpact=client.MatrixAccountId!=null&&impacts.TryGetValue((car.SessionId,client.MatrixAccountId),out var impact)&&now-impact.Time<500;
 +                    var delta=hasImpact?impacts[(car.SessionId,client.MatrixAccountId!)].Delta:Vector3.Zero;
-+                    client.SendPacket(new MatrixPhysicsImpulse{Sequence=++_impulseSequence,Delta=delta});
++                    client.SendPacket(new MatrixPhysicsImpulse{Sequence=++_impulseSequence,Delta=delta,TargetVelocity=hasImpact?impacts[(car.SessionId,client.MatrixAccountId!)].TargetVelocity:state.State.Velocity});
 +                }
 +            }
 +            var active = frame.Vehicles.Select(v => (int)v.Slot).ToHashSet();
@@ -758,7 +782,7 @@ index 0000000..1019743
 +                [Velocity(c.Client!,now).X, Velocity(c.Client!,now).Y, Velocity(c.Client!,now).Z], c.Client!.MatrixAccountId,
 +                c.Status.EngineRpm,c.Status.Gear,c.Status.Gas,c.Status.SteerAngle,
 +                c.Status.StatusFlag.HasFlag(AssettoServer.Shared.Network.Packets.Outgoing.CarStatusFlags.BrakeLightsOn),
-+                c.Status.StatusFlag.HasFlag(AssettoServer.Shared.Network.Packets.Outgoing.CarStatusFlags.LightsOn),Coupled(c.Client!,now),Feet(c.Client!,now),_physics.TryGetValue(c.Client!,out var telemetry)&&now-telemetry.Time<500&&telemetry.State.Collision)).ToArray();
++                c.Status.StatusFlag.HasFlag(AssettoServer.Shared.Network.Packets.Outgoing.CarStatusFlags.LightsOn),Coupled(c.Client!,now),Feet(c.Client!,now),_physics.TryGetValue(c.Client!,out var telemetry)&&now-telemetry.Time<500&&telemetry.State.Collision,telemetry.Time)).ToArray();
 +        var w=weather.CurrentWeather;
 +        var environment=new MatrixEnvironment((float)weather.CurrentDateTime.TimeOfDay.TickOfDay/10000000f/3600f,w.RainIntensity,w.RainWetness,w.RainWater,1-w.Type.Sun,w.TrackGrip,w.WindSpeed,w.WindDirection,w.TemperatureAmbient,weather.CurrentDateTime.DayOfYear,(float)(weather.TrackParams?.Latitude??34.05));
 +        lock (_gate) _snapshot = new MatrixSnapshot(1, settings.Room, settings.Revision, _applied, now, native,environment,new Dictionary<string,float>(_poseOffsets));
@@ -774,7 +798,7 @@ index 0000000..1019743
 +}
 diff --git a/AssettoServer/Server/MatrixBridgeProtocol.cs b/AssettoServer/Server/MatrixBridgeProtocol.cs
 new file mode 100644
-index 0000000..09aad04
+index 0000000..a82a405
 --- /dev/null
 +++ b/AssettoServer/Server/MatrixBridgeProtocol.cs
 @@ -0,0 +1,74 @@
@@ -792,10 +816,10 @@ index 0000000..09aad04
 +    long Sequence, long IssuedAt, MatrixVehicle[] Vehicles, MatrixImpact[]? Impacts = null, MatrixScore[]? Scores = null);
 +public sealed record MatrixLeader(int Rank,string Driver,int Score,int Passes);
 +public sealed record MatrixScore(byte Slot,string Account,int Score,float Combo,int Passes,int Rank,MatrixLeader[] Leaders);
-+public sealed record MatrixImpact(byte Slot, string Account, float[] Delta);
++public sealed record MatrixImpact(byte Slot, string Account, float[] Delta, float[] TargetVelocity);
 +public sealed record MatrixNativeVehicle(byte Slot, string Model, string Name,
 +    float[] Position, float[] Rotation, float[] Velocity, string? Account = null,
-+    ushort Rpm = 800, byte Gear = 1, byte Gas = 0, byte Steer = 127, bool Brake = false, bool Lights = false, bool Coupled = false, float[]? Feet = null,bool Collision=false);
++    ushort Rpm = 800, byte Gear = 1, byte Gas = 0, byte Steer = 127, bool Brake = false, bool Lights = false, bool Coupled = false, float[]? Feet = null,bool Collision=false,long PhysicsTime=0);
 +public sealed record MatrixEnvironment(float Hour,float Rain,float Wetness,float Water,float Cloud,float Grip,float Wind,int WindDirection,float Temperature,int DayOfYear=172,float Latitude=34.05f);
 +public sealed record MatrixSnapshot(int Schema, string Room, string Revision, long AppliedSequence,
 +    long ServerTime, MatrixNativeVehicle[] Vehicles, MatrixEnvironment? Environment = null, Dictionary<string,float>? PoseOffsets = null);
@@ -819,7 +843,7 @@ index 0000000..09aad04
 +        if(frame.Impacts is {Length: > 32})return false;
 +        var impacted = new HashSet<byte>();
 +        foreach(var impact in frame.Impacts ?? [])
-+            if(impact == null || _slots.Contains(impact.Slot) || !impacted.Add(impact.Slot) || !Guid.TryParse(impact.Account,out _) || !Vector(impact.Delta,80) || impact.Delta.Sum(x=>x*x)>6400)return false;
++            if(impact == null || _slots.Contains(impact.Slot) || !impacted.Add(impact.Slot) || !Guid.TryParse(impact.Account,out _) || !Vector(impact.Delta,80) || impact.Delta.Sum(x=>x*x)>6400 || MathF.Abs(impact.Delta[1])>.001f || !Vector(impact.TargetVelocity,200))return false;
 +        var seen = new HashSet<byte>();
 +        var scored=new HashSet<byte>();
 +        if(frame.Scores is {Length:>32})return false;
@@ -931,16 +955,16 @@ index 0000000..124baa2
 +}
 diff --git a/AssettoServer/Server/MatrixPhysicsPackets.cs b/AssettoServer/Server/MatrixPhysicsPackets.cs
 new file mode 100644
-index 0000000..fc9d9e4
+index 0000000..cd69301
 --- /dev/null
 +++ b/AssettoServer/Server/MatrixPhysicsPackets.cs
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,45 @@
 +using System.Numerics;
 +using AssettoServer.Network.ClientMessages;
 +
 +namespace AssettoServer.Server;
 +
-+[OnlineEvent(Key = "MG_PhysicsState_v1")]
++[OnlineEvent(Key = "MG_PhysicsState_v2")]
 +public class MatrixPhysicsState : OnlineEvent<MatrixPhysicsState>
 +{
 +    [OnlineEventField(Name = "ready")] public bool Ready;
@@ -951,11 +975,12 @@ index 0000000..fc9d9e4
 +    [OnlineEventField(Name = "collision")] public bool Collision;
 +}
 +
-+[OnlineEvent(Key = "MG_PhysicsImpulse_v1")]
++[OnlineEvent(Key = "MG_PhysicsImpulse_v2")]
 +public class MatrixPhysicsImpulse : OnlineEvent<MatrixPhysicsImpulse>
 +{
 +    [OnlineEventField(Name = "sequence")] public int Sequence;
 +    [OnlineEventField(Name = "delta")] public Vector3 Delta;
++    [OnlineEventField(Name = "targetVelocity")] public Vector3 TargetVelocity;
 +}
 +
 +[OnlineEvent(Key = "MG_PoseCalibration_v1")]
