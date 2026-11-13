@@ -6,7 +6,7 @@ test('teleport options preserve native coordinate axes and reject INI injection'
  const position=nativePointToMatrix('nohesi-110',[100,20,-300]),heading=nativeYawToMatrix('nohesi-110',.5);
  const ini=teleportOptions('nohesi-110',[{name:'Pits',position,heading}]);
  assert.match(ini,/POINT_0_POS=100.0000,20.5000,-300.0000/);
- assert.match(ini,/POINT_0_HEADING=28.6479/);
+ assert.match(ini,/POINT_0_HEADING=-28.6479/);
  assert.throws(()=>teleportOptions('nohesi-110',[{name:'bad\n[INJECT]',position,heading}]));
  assert.throws(()=>teleportOptions('nohesi-110',[{name:'bad',position:[NaN,0,0],heading}]));
 });

@@ -12,7 +12,9 @@ export function teleportOptions(room,destinations){
   // uses road height + 0.5 m so the chassis never starts inside the road.
   p[1]+=.5;
   if(p.some(v=>Math.abs(v)>100000))throw Error('Invalid destination position');
-  const heading=matrixHeadingToNative(room,d.heading)*180/Math.PI;
+  // CSP server points use compass headings (sin(h), 0, cos(h)); native packet
+  // yaw uses (-sin(yaw), 0, cos(yaw)), so their signs are opposite.
+  const heading=-matrixHeadingToNative(room,d.heading)*180/Math.PI;
   lines.push(`POINT_${i}=${d.name}`,`POINT_${i}_POS=${p.map(v=>v.toFixed(4)).join(',')}`,`POINT_${i}_HEADING=${heading.toFixed(4)}`,`POINT_${i}_GROUP=Matrix Games`);
  }
  return lines.join('\n')+'\n';
