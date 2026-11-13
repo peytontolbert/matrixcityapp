@@ -57,6 +57,15 @@ checks the installed game and required content, backs up the race configuration,
 and starts Assetto Corsa through the user's Steam installation. Content Manager
 is not required. Native players still need the licensed game and matching content.
 
+The launcher detects Steam from its Windows registration. If needed, users select
+only the Steam folder or a Steam library with **Locate Steam**. It checks known
+executable paths and bounded library/app manifests to find Assetto Corsa, including
+other library drives and a custom install-directory name; it never recursively
+scans the disk. Existing direct game-folder selections remain supported. Valid
+locations are remembered before authorization, so an expired link does not lose
+setup. Empty or invalid old settings fall back to detection and a default driver
+name. `--detect-steam PATH` verifies discovery without changing settings or joining.
+
 ## Accounts and traffic control
 
 Browser tickets and native join links require a current Matrix Games account.
