@@ -7,6 +7,18 @@ const fixture=()=>{
   relay:{nativeVehicles:()=>[],exchange:async()=>({ready:true,rejected:[]})}});
  session.ready=true;return {session,advance:n=>time+=n};
 };
+test('repeated native telemetry retains the resolved contact rather than stacking impulses',()=>{
+ const {session:s,advance}=fixture();let sampleTime=1;const impacts=[];
+ s.relay.nativeVehicles=()=>[{id:'native:0',account:'native-account',coupled:true,position:[0,0,0],velocity:[50,0,0],heading:0,sampleTime}];
+ s.relay.impact=(car,delta)=>impacts.push({delta:[...delta],target:[...car.velocity]});
+ s.traffic={update(){},snapshot:()=>({agents:[{id:1,x:4,y:0,feetZ:0,heading:0,pitch:0,roll:0,speedMps:20}]})};
+ for(let i=0;i<10;i++){advance(25);s.lastExchange=s.clock();s.advance(.025);}
+ assert.equal(impacts.length,1);assert.ok(Math.abs(impacts[0].target[0]-20)<1e-8);
+ assert.deepEqual(impacts[0].delta,[-30,0,0]);
+ sampleTime=2;advance(100);s.lastExchange=s.clock();s.advance(.025);
+ assert.equal(impacts.length,2,'A genuinely fresh sample can re-evaluate contact');
+ assert.equal(impacts[1].target[0],20,'Fresh contacts still target traffic speed, never a rebound');
+});
 test('tickets reserve capacity, are actor bound, and expire without leaking seats',()=>{
  const {session:s,advance}=fixture(),ticket=s.ticket('alice').ticket;
  assert.throws(()=>s.ticket('alice'),/Already/);assert.throws(()=>s.admit('bob',ticket,()=>{}),/Invalid/);

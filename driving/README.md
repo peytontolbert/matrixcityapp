@@ -68,6 +68,23 @@ name. `--detect-steam PATH` verifies discovery without changing settings or join
 
 ## Accounts and traffic control
 
+Traffic uses a shared cross-lane planner to reduce three-car walls on contiguous
+same-direction lanes. Spawn grids are staggered and reject aligned three-lane
+formations. Every 250 ms, a six-second lookahead chooses a yielding car and lets
+a leading car separate within the preset speed limit. Cooperative deceleration
+and the return from a speed-up are capped at 1.2 m/s²; normal obstacle, curve and
+following limits take priority. Faster players approaching from behind suppress
+artificial braking inside four seconds of closing distance. Vehicle identities,
+native slots and visible positions remain continuous. This creates opportunities,
+not a guaranteed empty route through stopped traffic or other players.
+
+`driving/tests/traffic-openings.test.mjs` includes a time-expanded reachable-path
+search at 180 km/h and a five-minute multiplayer simulation. The optional offline
+`traffic-openings-live.mjs` reads a private authored road from
+`MATRIX_TRAFFIC_NETWORK`, with optional `MATRIX_TRAFFIC_BASELINE_MODULE` and
+`MATRIX_TRAFFIC_REPORT` for comparative reports. It does not connect to live rooms
+and evaluates route geometry separately from collision/grounding validation.
+
 Browser tickets and native join links require a current Matrix Games account.
 Identity comes from the account session, never the request body. Both join paths
 share a 12/minute account quota; admissions are also limited to 30/minute per IP.
@@ -137,16 +154,18 @@ Verified in isolated staging on 2026-11-13: matching two-client snapshots, movem
 traffic/native listings and reconnects on both tracks; real published collision
 spawn stability; account quotas and active-browser logout revocation; native
 account/Steam/replay gates; R2 cold/warm rendering and authored brake lights.
-A real Steam-authenticated launcher join was verified before the new account gate;
-the final website-to-launcher-to-Steam flow awaits the approved API release.
+Native joins use the authenticated Matrix Games Launcher handoff. Coupled native
+cars use grounded CSP telemetry and bounded target-velocity corrections; native
+track/native car collision handling remains in Assetto Corsa. Traffic remains
+route-controlled. The v2 correction protocol must be deployed with its matching
+broker and requires native clients to rejoin. See `native/assetto/README.md` for
+the collision protocol and ComfyMap/teleport release configuration.
 
-This is not a production release or a claim of complete Matrix City/Assetto parity.
-Native and traffic vehicles remain kinematic participants in browser collisions;
-exact native pose/suspension calibration and coupled bidirectional impulses are
-not verified. City temporal/HDR rendering, full world shadow maps, authored audio
-banks, weather/time synchronization and exact native wheel/suspension telemetry
-are not provided by these standalone ports. Production deployment requires the
-repository release pipeline and approval. Matrix City production is unchanged.
+Automated contact tests cover repeated delayed samples, severe impacts, vertical
+velocity preservation and replay rejection. They do not replace a real driving
+check or establish complete Matrix City engine parity. Production deployment
+requires the repository release pipeline and approval. Matrix City production
+is unchanged.
 
 ## Browser-managed native launch (inactive prototype)
 
@@ -184,6 +203,35 @@ The optional Matrix launcher remains available for unsupported browsers.
 
 The account schema migration must run before deploying this frontend; the
 account API and driving broker must both include `/native-settings` support.
+
+## Passing corridors and offline validation
+
+For a fast closing player, spawn selection reserves a gradual passing corridor
+on adjacent lanes on the same road/deck. The corridor is anchored to authored
+path distance and shared server time, moving with traffic. It considers the
+whole arrival interval between the preset minimum speed and the new car's cruise
+speed, so catching a slower vehicle does not invalidate a cruise-only forecast.
+Existing cars keep their IDs, lane, pose and normal safety braking. Failed
+recycling attempts back off for 250ms instead of rescanning 500 candidates at every
+broker tick. Other players are checked before a candidate is accepted.
+
+This trades some density for usable openings; the requested population is a
+capacity, not a reason to fill a reserved gap. It gradually takes effect through
+new/offscreen spawns, and cannot guarantee a clear route through existing queues,
+stopped players or sudden lane changes. The cross-lane speed planner remains
+bounded and does not override emergency braking.
+
+`driving/tests/traffic-corridor-live.mjs` reads the private network from
+`MATRIX_TRAFFIC_NETWORK`; optional `MATRIX_TRAFFIC_BASELINE_MODULE` compares an
+older traffic module, and `MATRIX_TRAFFIC_REPORT` saves the JSON results. It runs
+180 seconds of actual authored-lane traffic, then searches lateral paths using
+future simulated poses, curved road boundaries, practical vehicle clearance,
+2.5m/s lateral speed and 6.25m/s? lateral acceleration. It reports constant 180km/h
+four/eight-second windows and four-second braking at 2m/s? down to 151km/h.
+Any-lane starts measure whether an opening exists; center-lane starts show that
+late lane choice still matters. These are offline counterfactual checks: traffic
+reacts to the reference drivers, not every alternate path, and they do not replace
+native physics or an interactive driving check.
 
 ## Persistent highscores
 

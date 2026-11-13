@@ -79,7 +79,10 @@ export function resolveCars(a,b) {
  }
  const ia=a.kinematic||a.streaming?0:1/a.mass,ib=b.kinematic||b.streaming?0:1/b.mass,total=ia+ib;if(!total)return true;
  const relative=((b.streaming?0:b.velocity[0])-(a.streaming?0:a.velocity[0]))*normal[0]+((b.streaming?0:b.velocity[1])-(a.streaming?0:a.velocity[1]))*normal[1];
- const impulse=relative<0?-(1.08)*relative/total:0;
+ // External traffic follows a route; reflecting a native car off that infinite
+ // mass creates an artificial rebound. Match contact-normal speed instead.
+ const restitution=(a.kind==='native'&&b.kind==='traffic'||b.kind==='native'&&a.kind==='traffic')?0:.08;
+ const impulse=relative<0?-(1+restitution)*relative/total:0;
  for(const [car,inv,sign] of [[a,ia,-1],[b,ib,1]])if(inv){
   for(let k=0;k<2;k++){car.position[k]+=sign*normal[k]*(depth+.002)*inv/total;car.velocity[k]+=sign*normal[k]*impulse*inv;}
   const c=Math.cos(car.heading),s=Math.sin(car.heading);

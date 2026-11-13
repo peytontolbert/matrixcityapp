@@ -1,4 +1,6 @@
 import {routeInterest} from './traffic-interest.js';
+import {TrafficOpenings,trafficWalls} from './traffic-openings.js';
+import {reservesPassingCorridor} from './traffic-corridor.js';
 const TRAFFIC_MODELS = Object.freeze([
   'prius', 'golf7r', 'focusrs', 'a6', 'e300', 'rs318', 'aqv', 'models',
 ]);
@@ -135,8 +137,10 @@ export function createAuthoritative110Traffic(network, options = {}) {
   const drivableLanes = lanes.filter(lane => lane.role !== 4);
   const outgoing = prepareConnections(network, lanesById);
   const spawnSamples = [];
-  for (const lane of drivableLanes) {
-    for (let distance = 20; distance < lane.lengthM - 10; distance += 35) {
+  for (const [index,lane] of drivableLanes.entries()) {
+    // Adjacent lanes must not all spawn on the same longitudinal 35 m grid.
+    const phase=(index*.38196601125%1)*35;
+    for (let distance = 20+phase; distance < lane.lengthM - 10; distance += 35) {
       spawnSamples.push({ lane, distance, sample: sampleLane(lane, distance) });
     }
   }
@@ -145,8 +149,9 @@ export function createAuthoritative110Traffic(network, options = {}) {
   const populationLimit = options.maximumPopulation ?? 240;
   if (!Number.isInteger(populationLimit) || populationLimit < 1 || populationLimit > 240) throw Error('Invalid shared traffic capacity');
   const agents = [];
+  const openings=new TrafficOpenings();
   const surface=options.surface||((sample)=>sample);
-  let interestCache=new Map(),recycledCount=0,interestPlayers=[],interestAt=-Infinity;
+  let corridorCache=new Map(),interestCache=new Map(),recycledCount=0,interestPlayers=[],interestAt=-Infinity;
   function interest(lane,player,distance){const key=interestPlayers.indexOf(player)+':'+lane.id;let row=interestCache.get(key);if(!row){row=routeInterest(lane,player,0);interestCache.set(key,row);}return {...row,ahead:row.ahead+distance};}
   let presetName = Object.hasOwn(AUTHORITATIVE_110_TRAFFIC_PRESETS,options.preset) ? options.preset : 'heavy';
   let serial = 0;
@@ -174,10 +179,32 @@ export function createAuthoritative110Traffic(network, options = {}) {
 
   function targetPopulation() { return populationLimit; }
 
+  function reservedOpening(candidate,players,speed,now){
+    for(const player of players){
+      if(!Number.isFinite(player.heading))continue;
+      const velocity=player.velocity||[0,0],playerSpeed=velocity[0]*Math.cos(player.heading)+velocity[1]*Math.sin(player.heading);
+      if(playerSpeed-speed<8)continue;
+      let group=corridorCache.get(players.indexOf(player));
+      if(!group){
+        const nearby=drivableLanes.map(lane=>({lane,...interest(lane,player,0)})).filter(row=>row.relevant&&Number.isFinite(row.side)&&Math.abs(row.height)<1.8&&row.alignment>.98).sort((a,b)=>a.side-b.side);
+        let at=nearby.reduce((best,row,i)=>Math.abs(row.side)<Math.abs(nearby[best]?.side??Infinity)?i:best,0),lo=at,hi=at;
+        while(lo>0&&nearby[lo].side-nearby[lo-1].side<5)lo--;
+        while(hi+1<nearby.length&&nearby[hi+1].side-nearby[hi].side<5)hi++;
+        group=nearby.slice(lo,hi+1);corridorCache.set(players.indexOf(player),group);
+      }
+      if(group.length<2)continue;
+      const row=group.find(row=>row.lane===candidate.lane);if(!row)continue;
+      if(reservesPassingCorridor(group,row,candidate.distance,playerSpeed,speed,preset().speedKmh[0]/3.6,now))return true;
+    }
+    return false;
+  }
   function safeSpawn(candidate, players, config, recycled = null) {
     if (agents.some(agent => agent !== recycled && agent.lane.id === candidate.lane.id
       && Math.abs(agent.distance - candidate.distance) < config.minimumSpacingM)) return false;
     if(agents.some(agent=>agent!==recycled&&Math.abs(agent.sample.position[2]-candidate.sample.position[2])<2&&distance2(agent.sample.position,candidate.sample.position)<6))return false;
+    const local=agents.filter(agent=>agent!==recycled&&distance2(agent.sample.position,candidate.sample.position)<24);
+    const proposed={...candidate,id:'spawn-candidate',speedMps:0};
+    if(trafficWalls([...local,proposed],{predict:false,clearance:20}).some(wall=>wall.some(item=>item.row===proposed)))return false;
     return players.every(player => distance2(candidate.sample.position, player) > 28);
   }
 
@@ -196,11 +223,13 @@ export function createAuthoritative110Traffic(network, options = {}) {
       if(Number.isFinite(owner.heading)&&(!route.relevant||route.ahead<config.spawnDistanceM[0]||route.ahead>config.spawnDistanceM[1]))continue;
       const minimumDistance=config.spawnDistanceM[0];
       if (nearestPlayer < minimumDistance || nearestPlayer > config.spawnDistanceM[1]) continue;
+      const speedRange = config.speedKmh;
+      const cruiseKph = speedRange[0] + hashUnit((serial+1) * 41) * (speedRange[1] - speedRange[0]);
+      if(reservedOpening(candidate,players,cruiseKph/3.6,now))continue;
       if (!safeSpawn(candidate, players, config, recycled)) continue;
       const grounded=surface(candidate.sample);if(!grounded)continue;
       const id = ++serial;
-      const speedRange = config.speedKmh;
-      const cruiseKph = speedRange[0] + hashUnit(id * 41) * (speedRange[1] - speedRange[0]);
+
       const replacement = {
         id: recycled?.id || `traffic_${id}`, lane: candidate.lane, distance: candidate.distance,
         speedMps: cruiseKph / 3.6, cruiseMps: cruiseKph / 3.6,
@@ -286,9 +315,10 @@ export function createAuthoritative110Traffic(network, options = {}) {
     const dt = clamp(Number(deltaSeconds) || 0, 0, 0.1);
     if (dt === 0) return;
     const players = activePlayers(roomPlayers);
-    if(now-interestAt>=250||players.length!==interestPlayers.length){interestCache.clear();interestAt=now;}interestPlayers=players;
+    if(now-interestAt>=250||players.length!==interestPlayers.length){interestCache.clear();corridorCache.clear();interestAt=now;}interestPlayers=players;
     lastPlayerCount = players.length;
     const config = preset();
+    openings.update(agents,players,now);
     const sorted = new Map();
     for (const agent of agents) {
       const bucket = sorted.get(agent.lane.id) || [];
@@ -301,7 +331,7 @@ export function createAuthoritative110Traffic(network, options = {}) {
         const agent = bucket[index];
         if(agent.expired){agent.speedMps=0;continue;}
         const ahead = bucket[index + 1];
-        let target = agent.cruiseMps;
+        let target = openings.cruise(agent,agent.cruiseMps,config.speedKmh[1]/3.6,dt,players);
         const headway=agent.headway*(presetName==='rush'?.8:presetName==='light'?1.5:1);
         if (ahead) {
           const gap = ahead.distance - agent.distance;
@@ -315,6 +345,7 @@ export function createAuthoritative110Traffic(network, options = {}) {
         const links=outgoing.get(agent.lane.id)||[],next=links.find(l=>l.fromDistanceM>=agent.distance);
         if(next&&!mergeClear(agent,next,players))target=Math.min(target,followingSpeed(next.fromDistanceM-agent.distance,0,config.decelerationMps2,.5));
         if(!agent.lane.loop&&!links.some(l=>l.fromDistanceM>=agent.distance))target=Math.min(target,followingSpeed(agent.lane.lengthM-agent.distance,0,config.decelerationMps2,.5));
+        target=openings.target(agent,target,dt,players);
         const rate = target < agent.speedMps ? config.decelerationMps2 : config.accelerationMps2;
         agent.brake=target<agent.speedMps-.3?1:0;
         agent.speedMps += clamp(target - agent.speedMps, -rate * dt, rate * dt);
@@ -348,7 +379,9 @@ export function createAuthoritative110Traffic(network, options = {}) {
         if ((agent.expired && nearest > 150) || (now >= agent.protectedUntil && (nearest > config.recycleDistanceM || !useful&&nearest>180&&behindEveryone))) {
           // If no safe replacement exists, keep this slot parked rather than
           // disconnecting it or teleporting a car beside a player.
-          spawnOne(players,now,agent);
+          if(now>=(agent.retrySpawnAt||0)){
+            agent.retrySpawnAt=spawnOne(players,now,agent)?0:now+250;
+          }
         }
       }
       if (now - lastPopulationUpdate >= 250) {
