@@ -10,6 +10,11 @@ export const VEHICLE_PROFILE=Object.freeze({
  dataAcdSha256:'315cf01d11a866e830611db6f742800147738692b6474d299044db2dc5cd4773',
 });
 export const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
+export function verifyNativeArchive(bytes){
+ const hash=sha256(bytes);
+ if(hash!==VEHICLE_PROFILE.dataAcdSha256)throw Error('Native data.acd differs from the browser physics source');
+ return hash;
+}
 export function verifyProfileIdentity(bytes,expected=VEHICLE_PROFILE){
  if(sha256(bytes)!==expected.profileSha256)throw Error('Vehicle physics export checksum mismatch');
  const document=JSON.parse(bytes);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {VEHICLE_PROFILE,verifyProfileIdentity,verifiedHandling,sha256} from '../vehicle-profile.mjs';
+import {VEHICLE_PROFILE,verifyProfileIdentity,verifiedHandling,verifyNativeArchive,sha256} from '../vehicle-profile.mjs';
 import {vehicleBody,createCar,MODEL,resolveCars} from '../physics.js';
 
 const source={carId:MODEL,dataAcdSha256:'a'.repeat(64)};
@@ -23,6 +23,9 @@ test('car and tyre provenance must both match the native archive',()=>{
 test('shared bodies reject missing mass and unsupported car models',()=>{
  for(const mass of [undefined,NaN,Infinity,0,-1])assert.throws(()=>vehicleBody({mass}),/mass/);
  assert.throws(()=>vehicleBody({mass:1500},'another-model'),/No verified collision profile/);
+});
+test('a different native archive cannot pass the startup identity check',()=>{
+ assert.throws(()=>verifyNativeArchive(Buffer.from('another car version')),/Native data.acd differs/);
 });
 test('changing browser/native driver type cannot change traffic contact response',()=>{
  for(const heading of [0,.4,1.7])for(const speed of [10,35,80])for(const reversed of [false,true]){

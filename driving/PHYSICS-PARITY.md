@@ -7,8 +7,10 @@ parameter provenance, not equivalent handling.
 ## Data and shared contacts
 
 `vehicle-profile.mjs` pins the complete 350Z JSON export and its native `data.acd`
-identity. Startup rejects changed export bytes, a different car, mismatched tyre
-provenance, or invalid dynamics. An intentional profile update must change the
+identity. The private service configuration must set `nativeCarDataFile` to the
+absolute, readable archive path used by the native server. Startup hashes that
+archive and rejects changed native data, changed export bytes, a different car,
+mismatched tyre provenance, or invalid dynamics. An intentional profile update must change the
 reviewed pins and pass the private source verification again. Do not edit only
 the provenance fields in an otherwise modified export.
 
@@ -35,8 +37,11 @@ DRIVING_TEST_PROFILE=/private/350z.json node --test driving/tests/*.test.mjs
 Use the host's project temporary-storage wrapper for these commands. Keep game
 data outside this public repository and outside CI artifacts. The check returns
 both SHA-256 identities and fails on a mismatch. `dataIdentityVerified` does not
-imply `nativeHandlingParityVerified`. Startup independently verifies export
-identity even if an operator omits this private release command.
+imply `nativeHandlingParityVerified`. Startup independently verifies both archive
+and export identity even if an operator omits this private release command.
+The health response reports the checked identities and explicitly separates them
+from unverified handling parity. Keep native content immutable for the life of a
+release; update the broker and its archive path together when native content changes.
 
 Build and run the repository tests and public-source scan. Deploy only the tested
 commit through the release workflow and the versioned backend release procedure.
