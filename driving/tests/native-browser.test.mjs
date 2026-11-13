@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {raceConfig,prepareRace,restoreRace,atomicWrite,recentSteamId,STEAM_LAUNCH,MODEL} from '../client/native-browser.js';
+import {raceConfig,prepareRace,restoreRace,atomicWrite,recentSteamId,raceSteamId,detectSteamId,STEAM_LAUNCH,MODEL} from '../client/native-browser.js';
 const settings={schema:2,room:'nohesi-110',track:'nohesi_110',model:MODEL,host:'example.test',gamePort:9600,httpPort:8081,features:['STEAM_TICKET','CUSTOM_UPDATE']};
 const identity={driver:'Driver',steamId:'76561198000000000',skin:'default'};
 const grant=()=>({...settings,password:'mg1.test.'+'a'.repeat(43),expiresAt:Date.now()+90000});
@@ -41,5 +41,12 @@ test('failed file commit aborts and leaves a durable recoverable pending record'
  await assert.rejects(prepareRace(f),/disk full/);assert.ok(aborted);assert.ok(await f.store.get(f.key+':pending'));assert.equal(file.text,original);await restoreRace(f);assert.equal(await f.store.get(f.key+':pending'),undefined);
 });
 test('local Steam lookup selects only most recent account and exports no other fields',()=>{
- assert.equal(recentSteamId('"users" { "76561198000000001" { "MostRecent" "0" } "76561198000000000" { "MostRecent" "1" "AccountName" "private" } }'),identity.steamId);assert.equal(recentSteamId('"76561198000000000" { "MostRecent" "0" }'),'');
+ assert.equal(recentSteamId('"users" { "76561198000000001" { "MostRecent" "0" } "76561198000000000" { "MostRecent" "1" "AccountName" "private" } }'),identity.steamId);assert.equal(recentSteamId('"76561198000000000" { "MostRecent" "0" }'),identity.steamId);
+ assert.equal(recentSteamId('"76561198000000000" {} "76561198000000001" {}'),'');
+ assert.equal(raceSteamId('[REMOTE]\nGUID='+identity.steamId+'\n[CAR_0]\n'),identity.steamId);assert.equal(raceSteamId('[CAR_0]\nGUID='+identity.steamId),'');
+});
+test('Steam ID lookup prefers current login metadata over a library last owner',async()=>{
+ const root=new Folder(),config=await root.getDirectoryHandle('config'),apps=await root.getDirectoryHandle('steamapps');
+ apps.children.set('appmanifest_244210.acf',new File('"LastOwner" "76561198000000001"'));assert.equal(await detectSteamId(root),'76561198000000001');
+ config.children.set('loginusers.vdf',new File('"76561198000000000" {"MostRecent" "1"}'));assert.equal(await detectSteamId(root),identity.steamId);
 });

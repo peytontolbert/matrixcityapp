@@ -1,4 +1,4 @@
-import {NativeStore,supported,findGame,directory,detectSteamId,readText,prepareRace,restoreRace,STEAM_LAUNCH} from './native-browser.js';
+import {NativeStore,supported,findGame,directory,detectSteamId,raceSteamId,readText,prepareRace,restoreRace,STEAM_LAUNCH} from './native-browser.js';
 export function nativeBrowserUI({api,profileApi,requireAccount,message}){
  const panel=document.querySelector('#native-setup'),summary=document.querySelector('#native-summary'),steam=document.querySelector('#select-steam'),cfg=document.querySelector('#select-cfg'),save=document.querySelector('#save-native'),restore=document.querySelector('#restore-native'),forget=document.querySelector('#forget-native'),keep=document.querySelector('#keep-native'),launch=document.querySelector('#steam-launch'),driver=document.querySelector('#native-driver'),id=document.querySelector('#native-steam-id'),closed=document.querySelector('#native-closed');
  let actor,key,setup={},busy=false,store,deviceId,pending;
@@ -29,12 +29,13 @@ export function nativeBrowserUI({api,profileApi,requireAccount,message}){
   if(folder.name.toLowerCase()!=='cfg')try{folder=await directory(folder,'cfg');}catch{}
   const text=await readText(await folder.getFileHandle('race.ini'));
   if(!/^\[RACE\]/im.test(text)||!/^\[HEADER\]/im.test(text))throw Error('Choose Documents / Assetto Corsa. Run Assetto once if race.ini does not exist yet.');
-  await sameAccount();setup={...setup,cfg:folder};if(!id.value)id.value=text.match(/^GUID=(7656119[0-9]{10})\s*$/m)?.[1]||'';
-  await store.set(key,setup);message('Race settings remembered. Confirm your Steam ID and save your profile.');
+  await sameAccount();setup={...setup,cfg:folder};id.value=await detectSteamId(setup.steam)||raceSteamId(text)||id.value;
+  await store.set(key,setup);message(id.value?'Race settings remembered and Steam account detected. Save your profile.':'Race settings remembered. Select the main Steam folder to detect your Steam account.');
  });
  async function saveProfile(){
   if(!setup.steam||!setup.cfg)throw Error('Select your Steam and race settings folders first.');
-  if(!/^7656119[0-9]{10}$/.test(id.value))throw Error('Enter the 17-digit Steam ID of the account signed in to Steam.');
+  id.value=await detectSteamId(setup.steam)||raceSteamId(await readText(await setup.cfg.getFileHandle('race.ini')))||id.value;
+  if(!/^7656119[0-9]{10}$/.test(id.value))throw Error('Open Steam and sign in, then select the main Steam folder so your account can be detected automatically.');
   const settings={steamFolder:setup.steam.name,gameFolder:setup.gamePath||setup.game.name,steamId:id.value,driver:driver.value.trim()};
   await sameAccount();await profileApi({deviceId,settings});setup={...setup,saved:settings};await store.set(key,setup);
  }
@@ -57,7 +58,7 @@ export function nativeBrowserUI({api,profileApi,requireAccount,message}){
   await run(async()=>{
    if(!actor||!setup.game||!setup.cfg)throw Error('Choose your folders and save the setup below first.');
    if(!closed.checked)throw Error('Close Assetto and confirm it is closed before preparing a join.');
-   await permission(setup.cfg,'readwrite');await permission(setup.game,'read');await saveProfile();
+   await permission(setup.cfg,'readwrite');await permission(setup.steam,'read');await permission(setup.game,'read');await saveProfile();
    await navigator.locks.request('matrixgames-race',async()=>{
     const settings=await api('/native-settings',{room});
     await prepareRace({setup,store,key,settings,identity:{driver:driver.value.trim(),steamId:id.value},redeem:async()=>{

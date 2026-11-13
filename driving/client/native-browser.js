@@ -11,9 +11,17 @@ export async function findGame(root){
 }
 export function recentSteamId(text){
  const entries=[...text.matchAll(/"(7656119[0-9]{10})"\s*\{([^{}]*)\}/g)];
- return entries.find(m=>/"MostRecent"\s*"1"/i.test(m[2]))?.[1]||'';
+ const recent=entries.filter(m=>/"MostRecent"\s*"1"/i.test(m[2]));
+ return recent.length===1?recent[0][1]:entries.length===1?entries[0][1]:'';
 }
-export async function detectSteamId(root){try{return recentSteamId(await readText(await (await directory(root,'config')).getFileHandle('loginusers.vdf')));}catch{return '';}}
+export function raceSteamId(text){return text.match(/(?:^|\n)\[REMOTE\]\s*\r?\n([^[]*)/i)?.[1]?.match(/^GUID=(7656119[0-9]{10})\s*$/m)?.[1]||'';}
+export async function detectSteamId(root){
+ if(!root)return '';
+ try{const id=recentSteamId(await readText(await (await directory(root,'config')).getFileHandle('loginusers.vdf')));if(id)return id;}catch{}
+ // A separately selected Steam library can identify the last account that used AC.
+ for(const path of ['steamapps',''])try{const text=await readText(await (await directory(root,path)).getFileHandle('appmanifest_244210.acf'));const id=text.match(/"LastOwner"\s*"(7656119[0-9]{10})"/i)?.[1];if(id)return id;}catch{}
+ return '';
+}
 export async function validateContent(game,track){
  if(!['nohesi_110','nohesi_415'].includes(track))throw Error('Unsupported track');
  const missing=[];

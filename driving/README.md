@@ -155,7 +155,10 @@ the authenticated API, and uses the existing single-use, Steam-bound join gate.
 It writes a durable unique backup before replacing race.ini and presents a
 fixed `steam://run/244210//%2Fspawn/` link. A separate click retains browser user
 activation and allows Steam to confirm launch arguments. No shell or downloaded
-script is involved. Steam must be signed in to the matching licensed account.
+script is involved. Steam must be signed in to the matching licensed account. The Steam ID is
+detected locally from loginusers.vdf (most recent/single account), the Assetto
+app manifest LastOwner, or REMOTE/GUID in race.ini. Only the detected ID leaves
+the device, not Steam account-file contents. Detection runs again before joins.
 
 The browser cannot detect an already-running game or its exit. Users must close
 Assetto and confirm before preparing/restoring settings. Restoration requires
