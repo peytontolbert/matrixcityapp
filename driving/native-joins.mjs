@@ -20,6 +20,6 @@ export class NativeJoins {
   const key=digest(token),grant=this.pending.get(key);if(!grant)throw Error('Native authorization expired or already used');
   const s=this.sessions.get(grant.room);if(!s?.ready)throw Error('Native server unavailable');
   this.pending.delete(key);this.leases.set(grant.actor,this.clock()+90000);
-  return {password:s.relay.nativePassword(grant.actor,steamId),expiresAt:this.clock()+90000};
+  return {schema:2,room:grant.room,...s.native,model:'06_ygt_53_nissan_350z',password:s.relay.nativePassword(grant.actor,steamId),expiresAt:this.clock()+90000};
  }
 }

@@ -48,14 +48,18 @@ uses `DRIVING_SERVICE_ORIGIN` and `DRIVING_SERVICE_KEY`. Guest admission is not
 supported. Use the project's temporary-directory wrapper for remote builds.
 
 The open-source Windows launcher builds from `native/MatrixGamesLauncher.cs`
-using `scripts/build-launcher.ps1`. It opens downloaded `.mgjoin.json` files,
+using `scripts/build-launcher.ps1`. Run it once and choose **Enable browser joins**.
+It copies itself to `%LOCALAPPDATA%/MatrixGames/Launcher` and registers the
+`matrixgames://` URI handler for the current Windows user without administrator
+access. Later website joins open the launcher directly; the browser may show its
+normal external-application prompt. The launcher automatically
 checks the installed game and required content, backs up the race configuration,
 and starts Assetto Corsa through the user's Steam installation. Content Manager
 is not required. Native players still need the licensed game and matching content.
 
 ## Accounts and traffic control
 
-Browser tickets and native join files require a current Matrix Games account.
+Browser tickets and native join links require a current Matrix Games account.
 Identity comes from the account session, never the request body. Both join paths
 share a 12/minute account quota; admissions are also limited to 30/minute per IP.
 WebSocket admissions have account/IP quotas and control messages are bounded.
@@ -63,7 +67,11 @@ An account can hold one active or pending driving seat across both tracks and
 client types. Browser logout/expiry disconnects the driving socket within the
 15-second session check interval.
 
-Native `.mgjoin.json` schema 2 capabilities expire after 90 seconds and redeem
+Native links carry only a 43-character authorization code; no server address,
+password, Steam ID or executable path is accepted from the URI. The launcher
+redeems only against the fixed HTTPS Matrix Games API and obtains validated
+server/content details from that response. Legacy `.mgjoin.json` files remain
+supported through the optional file button. Join capabilities expire after 90 seconds and redeem
 once. The launcher exchanges one for a room/account/Steam-bound HMAC credential.
 The native TCP handshake validates it before normal Steam authentication. Native
 account identity stays in the private relay and is omitted from public snapshots.
