@@ -139,7 +139,12 @@ banks, weather/time synchronization and exact native wheel/suspension telemetry
 are not provided by these standalone ports. Production deployment requires the
 repository release pipeline and approval. Matrix City production is unchanged.
 
-## Browser-managed native launch
+## Browser-managed native launch (inactive prototype)
+
+Production native joins use Matrix Games Launcher. The directory-picker prototype
+is retained as source only: it is not imported by the production client, its setup
+UI is removed, and production no longer requests browser file access or native
+setup profiles. The authenticated launcher handoff needs no downloaded JSON file.
 
 On HTTPS in Chrome/Edge, native setup accepts a Steam library or the Assetto
 installation directory (read access), plus Documents/Assetto Corsa (write
