@@ -233,6 +233,33 @@ late lane choice still matters. These are offline counterfactual checks: traffic
 reacts to the reference drivers, not every alternate path, and they do not replace
 native physics or an interactive driving check.
 
+## Continuous traffic and stop diagnostics
+
+Connections accept the millimeter rounding used by the authored network export;
+real out-of-range connections are still rejected. Existing end merges that
+physically converge early can start up to 80m upstream, only after checking
+nearby segment projection, tangent agreement and elevation. Both source and
+target followers retain the merging vehicle as a physical leader until clear. Only selected optional turns
+can stop their car. Before a mandatory merge, the front incoming car requests
+space and main-lane traffic eases at up to 1.2m/s?, yielding priority to a fast
+following player. Other queued incoming cars wait their turn. Once a merge starts,
+main-lane followers treat that car as a leader before its lane ID changes.
+Player merge checks use the swept road corridor rather than a speed-based sphere,
+so ordinary adjacent-lane passes do not stop the merging lane.
+
+New cars need at least 180m or 12seconds of runway before an unconnected terminus.
+Existing visible vehicles are never removed or teleported to cure a queue. True
+road ends, occupied merges and stopped players still require traffic to stop.
+`traffic.diagnostics()` exposes bounded stop counts/reasons, maximum duration and
+up to 64 stopped vehicle IDs/lane IDs for private diagnostics; multiplayer wire
+records remain unchanged. Reasons distinguish players, leaders, merging, gradual
+merge yields, route ends and unavailable collision surfaces.
+
+`driving/tests/traffic-flow-live.mjs` uses the same private-network/baseline/report
+environment variables as the corridor replay. It reports stopped-car-seconds
+within 150m, density, identity/pose continuity and conservative body-overlap counts
+for normal, terminal and congested-entry sections of the authored 110 route.
+
 ## Persistent highscores
 
 Use Node 22.13 or newer and set `leaderboardDb` to an absolute private path such
