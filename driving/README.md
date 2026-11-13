@@ -204,6 +204,35 @@ The optional Matrix launcher remains available for unsupported browsers.
 The account schema migration must run before deploying this frontend; the
 account API and driving broker must both include `/native-settings` support.
 
+## Passing corridors and offline validation
+
+For a fast closing player, spawn selection reserves a gradual passing corridor
+on adjacent lanes on the same road/deck. The corridor is anchored to authored
+path distance and shared server time, moving with traffic. It considers the
+whole arrival interval between the preset minimum speed and the new car's cruise
+speed, so catching a slower vehicle does not invalidate a cruise-only forecast.
+Existing cars keep their IDs, lane, pose and normal safety braking. Failed
+recycling attempts back off for 250ms instead of rescanning 500 candidates at every
+broker tick. Other players are checked before a candidate is accepted.
+
+This trades some density for usable openings; the requested population is a
+capacity, not a reason to fill a reserved gap. It gradually takes effect through
+new/offscreen spawns, and cannot guarantee a clear route through existing queues,
+stopped players or sudden lane changes. The cross-lane speed planner remains
+bounded and does not override emergency braking.
+
+`driving/tests/traffic-corridor-live.mjs` reads the private network from
+`MATRIX_TRAFFIC_NETWORK`; optional `MATRIX_TRAFFIC_BASELINE_MODULE` compares an
+older traffic module, and `MATRIX_TRAFFIC_REPORT` saves the JSON results. It runs
+180 seconds of actual authored-lane traffic, then searches lateral paths using
+future simulated poses, curved road boundaries, practical vehicle clearance,
+2.5m/s lateral speed and 6.25m/s? lateral acceleration. It reports constant 180km/h
+four/eight-second windows and four-second braking at 2m/s? down to 151km/h.
+Any-lane starts measure whether an opening exists; center-lane starts show that
+late lane choice still matters. These are offline counterfactual checks: traffic
+reacts to the reference drivers, not every alternate path, and they do not replace
+native physics or an interactive driving check.
+
 ## Persistent highscores
 
 Use Node 22.13 or newer and set `leaderboardDb` to an absolute private path such

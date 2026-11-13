@@ -10,9 +10,9 @@ export function routeInterest(lane,player,distance){
   if(Math.abs(z-player[2])>5||dot(v,look)/length<.55)continue;
   const lateral=Math.hypot(a[0]+v[0]*t-player[0],a[1]+v[1]*t-player[1]);
   if(lateral>28||best&&lateral>=best.lateral)continue;
-  best={lateral,along:lane.cumulative[i]+(lane.cumulative[i+1]-lane.cumulative[i])*t};
+  best={lateral,height:z-player[2],alignment:dot(v,look)/length,side:-(a[0]+v[0]*t-player[0])*look[1]+(a[1]+v[1]*t-player[1])*look[0],along:lane.cumulative[i]+(lane.cumulative[i+1]-lane.cumulative[i])*t};
  }
  if(!best)return {ahead:Infinity,relevant:false};let ahead=distance-best.along;
  if(lane.loop&&ahead< -lane.lengthM/2)ahead+=lane.lengthM;
- return {ahead,relevant:true};
+ return {ahead,relevant:true,side:best.side,along:best.along,height:best.height,alignment:best.alignment};
 }
