@@ -154,16 +154,18 @@ Verified in isolated staging on 2026-11-13: matching two-client snapshots, movem
 traffic/native listings and reconnects on both tracks; real published collision
 spawn stability; account quotas and active-browser logout revocation; native
 account/Steam/replay gates; R2 cold/warm rendering and authored brake lights.
-A real Steam-authenticated launcher join was verified before the new account gate;
-the final website-to-launcher-to-Steam flow awaits the approved API release.
+Native joins use the authenticated Matrix Games Launcher handoff. Coupled native
+cars use grounded CSP telemetry and bounded target-velocity corrections; native
+track/native car collision handling remains in Assetto Corsa. Traffic remains
+route-controlled. The v2 correction protocol must be deployed with its matching
+broker and requires native clients to rejoin. See `native/assetto/README.md` for
+the collision protocol and ComfyMap/teleport release configuration.
 
-This is not a production release or a claim of complete Matrix City/Assetto parity.
-Native and traffic vehicles remain kinematic participants in browser collisions;
-exact native pose/suspension calibration and coupled bidirectional impulses are
-not verified. City temporal/HDR rendering, full world shadow maps, authored audio
-banks, weather/time synchronization and exact native wheel/suspension telemetry
-are not provided by these standalone ports. Production deployment requires the
-repository release pipeline and approval. Matrix City production is unchanged.
+Automated contact tests cover repeated delayed samples, severe impacts, vertical
+velocity preservation and replay rejection. They do not replace a real driving
+check or establish complete Matrix City engine parity. Production deployment
+requires the repository release pipeline and approval. Matrix City production
+is unchanged.
 
 ## Browser-managed native launch (inactive prototype)
 
