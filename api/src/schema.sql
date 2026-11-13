@@ -15,3 +15,8 @@ CREATE TABLE IF NOT EXISTS api_rate_limits (
  key text PRIMARY KEY, hits integer NOT NULL, expires_at timestamptz NOT NULL
 );
 CREATE INDEX IF NOT EXISTS rate_expiry ON api_rate_limits(expires_at);
+CREATE TABLE IF NOT EXISTS native_setups (
+ user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ device_id uuid NOT NULL, settings jsonb NOT NULL,
+ updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(user_id,device_id)
+);

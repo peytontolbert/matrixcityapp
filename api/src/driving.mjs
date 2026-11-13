@@ -17,7 +17,7 @@ export async function drivingRoute(req,res,{db,config,url}){
   const response=await fetch(config.drivingOrigin+path,{method:'POST',headers:{'content-type':'application/json'},body:Buffer.concat(parts),signal:AbortSignal.timeout(5000)});
   const body=await response.json();send(res,response.status,body);return true;
  }
- check(req.method==='POST'&&['/ticket','/native-ticket','/native-redeem'].includes(path),404,'Not found');
+ check(req.method==='POST'&&['/ticket','/native-ticket','/native-redeem','/native-settings'].includes(path),404,'Not found');
  // Native launchers redeem a short-lived account-issued capability without a
  // browser cookie. All capability issuance requires the real website session.
  const redeem=path==='/native-redeem';

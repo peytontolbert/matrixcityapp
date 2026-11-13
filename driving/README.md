@@ -141,6 +141,37 @@ repository release pipeline and approval. Matrix City production is unchanged.
 
 ## Persistent highscores
 
+## Browser-managed native launch
+
+On HTTPS in Chrome/Edge, native setup accepts a Steam library or the Assetto
+installation directory (read access), plus Documents/Assetto Corsa/cfg (write
+access). Handles are retained in IndexedDB per Matrix account and browser device.
+`GET/POST /v1/native-setup` stores only folder display names, relative game
+location, driver name and Steam ID in PostgreSQL. It never stores handles, file
+contents or temporary join passwords. Absolute paths are not exposed by the
+browser picker. Each additional browser/device must grant its own access;
+clearing site data or revoking permissions requires setup again.
+
+The website checks installed content, fetches validated server features through
+the authenticated API, and uses the existing single-use, Steam-bound join gate.
+It writes a durable unique backup before replacing race.ini and presents a
+fixed `steam://run/244210//%2Fspawn/` link. A separate click retains browser user
+activation and allows Steam to confirm launch arguments. No shell or downloaded
+script is involved. Steam must be signed in to the matching licensed account.
+
+The browser cannot detect an already-running game or its exit. Users must close
+Assetto and confirm before preparing/restoring settings. Restoration requires
+the current file to match what the website wrote, validates the backup hash,
+and survives a page reload. Changed files are never silently overwritten; users
+can explicitly keep the current settings instead. Backups remain in cfg.
+Web Locks and a pending-session record prevent overlapping browser preparations.
+The optional Matrix launcher remains available for unsupported browsers.
+
+The account schema migration must run before deploying this frontend; the
+account API and driving broker must both include `/native-settings` support.
+
+## Persistent highscores
+
 Use Node 22.13 or newer and set `leaderboardDb` to an absolute private path such
 as `/var/lib/matrixgames-driving/leaderboard.sqlite`. The SQLite database belongs
 to the driving service user, outside versioned releases and outside the web root.

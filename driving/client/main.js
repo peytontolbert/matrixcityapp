@@ -1,3 +1,4 @@
+import {nativeBrowserUI} from './native-browser-ui.js';
 import {NativeLaunchLinks} from './native-launch.js';
 import {DrivingRenderer} from './renderer.js';
 import {sampleInput} from './input.js';
@@ -28,6 +29,10 @@ globalThis.fetch=(input,options)=>{
 };
 const api=async(path,body)=>{const r=await fetcher(origin+prefix+path,{credentials:'include',...(body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{})});const result=await r.json();if(!r.ok)throw Error(result.error||'Request failed');return result;};
 const nativeLinks=new NativeLaunchLinks(room=>api('/native-ticket',{room}));
+const nativeSetup=nativeBrowserUI({api,requireAccount,message,profileApi:async body=>{
+ const r=await fetcher(origin+'/v1/native-setup',{credentials:'include',cache:'no-store',...(body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{})});
+ const data=await r.json();if(!r.ok)throw Error(data.error||'Unable to save native setup');return data;
+}});
 function message(text){status.textContent=text;}
 function stop(text='Session ended.'){
  ++generation;clearTimeout(connectTimer);ready=false;joining=false;keys.clear();current=[];snapshots=null;you=null;
@@ -37,12 +42,15 @@ function stop(text='Session ended.'){
 }
 async function refresh(){
  try{let loginError;try{await requireAccount();}catch(e){account=null;loginError=e.message;}
+ try{await nativeSetup.update(account);}catch(e){message(e.message);}
  const r=await fetcher(contentBase+'/sessions');if(!r.ok)throw Error('Sessions unavailable');const data=await r.json();list.replaceChildren();for(const s of data.sessions){
   const card=document.createElement('section'),title=document.createElement('h2');title.textContent=s.room==='nohesi-110'?'110 · Los Angeles':'415 · Island';const note=document.createElement('p');note.textContent=s.ready?`${s.browserPlayers}/${s.capacity} browser seats · shared native session`:'Server unavailable';
   const browser=document.createElement('button');browser.textContent='Drive in browser';browser.disabled=!account||!s.ready||s.browserPlayers>=s.capacity;browser.onclick=()=>void join(s);
   const native=document.createElement('button');native.textContent='Join with Assetto Corsa';native.disabled=!account||!s.ready;
   const help=document.createElement('p');help.hidden=true;
-  native.onclick=async()=>{native.disabled=true;try{
+  native.onclick=()=>void nativeSetup.join(s.room);
+  const helper=document.createElement('button');helper.textContent='Use installed Matrix launcher';helper.disabled=native.disabled;
+  helper.onclick=async()=>{helper.disabled=true;try{
    const user=await requireAccount(),url=await nativeLinks.get(s.room,user.id);
    help.replaceChildren();help.hidden=false;
    const retry=document.createElement('a');retry.href=url;retry.textContent='Open launcher again';retry.referrerPolicy='no-referrer';
@@ -50,8 +58,9 @@ async function refresh(){
    help.append(retry,' ? ',install,' ? first time? Run the download, choose Enable browser joins, then click Join here again.');
    message('Opening Matrix Games Launcher. Allow your browser to open it if prompted.');
    try{retry.click();}catch{message('Click Open launcher again, or install the launcher first.');}
-  }catch(e){message(e.message);}finally{native.disabled=false;}};
-  card.append(title,note,browser,native,help);list.append(card);
+  }catch(e){message(e.message);}finally{helper.disabled=false;}};
+  const alternate=document.createElement('details'),label=document.createElement('summary');label.textContent='Other launch option';alternate.append(label,helper,help);
+  card.append(title,note,browser,native,alternate);list.append(card);
  }if(loginError&&!joining&&!socket)message(loginError);}catch(e){if(!joining&&!socket)message(e.message);}
 }
 async function join(session){
