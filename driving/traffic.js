@@ -1,4 +1,5 @@
 import {routeInterest} from './traffic-interest.js';
+import {TrafficOpenings,trafficWalls} from './traffic-openings.js';
 const TRAFFIC_MODELS = Object.freeze([
   'prius', 'golf7r', 'focusrs', 'a6', 'e300', 'rs318', 'aqv', 'models',
 ]);
@@ -135,8 +136,10 @@ export function createAuthoritative110Traffic(network, options = {}) {
   const drivableLanes = lanes.filter(lane => lane.role !== 4);
   const outgoing = prepareConnections(network, lanesById);
   const spawnSamples = [];
-  for (const lane of drivableLanes) {
-    for (let distance = 20; distance < lane.lengthM - 10; distance += 35) {
+  for (const [index,lane] of drivableLanes.entries()) {
+    // Adjacent lanes must not all spawn on the same longitudinal 35 m grid.
+    const phase=(index*.38196601125%1)*35;
+    for (let distance = 20+phase; distance < lane.lengthM - 10; distance += 35) {
       spawnSamples.push({ lane, distance, sample: sampleLane(lane, distance) });
     }
   }
@@ -145,6 +148,7 @@ export function createAuthoritative110Traffic(network, options = {}) {
   const populationLimit = options.maximumPopulation ?? 240;
   if (!Number.isInteger(populationLimit) || populationLimit < 1 || populationLimit > 240) throw Error('Invalid shared traffic capacity');
   const agents = [];
+  const openings=new TrafficOpenings();
   const surface=options.surface||((sample)=>sample);
   let interestCache=new Map(),recycledCount=0,interestPlayers=[],interestAt=-Infinity;
   function interest(lane,player,distance){const key=interestPlayers.indexOf(player)+':'+lane.id;let row=interestCache.get(key);if(!row){row=routeInterest(lane,player,0);interestCache.set(key,row);}return {...row,ahead:row.ahead+distance};}
@@ -178,6 +182,9 @@ export function createAuthoritative110Traffic(network, options = {}) {
     if (agents.some(agent => agent !== recycled && agent.lane.id === candidate.lane.id
       && Math.abs(agent.distance - candidate.distance) < config.minimumSpacingM)) return false;
     if(agents.some(agent=>agent!==recycled&&Math.abs(agent.sample.position[2]-candidate.sample.position[2])<2&&distance2(agent.sample.position,candidate.sample.position)<6))return false;
+    const local=agents.filter(agent=>agent!==recycled&&distance2(agent.sample.position,candidate.sample.position)<24);
+    const proposed={...candidate,id:'spawn-candidate',speedMps:0};
+    if(trafficWalls([...local,proposed],{predict:false,clearance:20}).some(wall=>wall.some(item=>item.row===proposed)))return false;
     return players.every(player => distance2(candidate.sample.position, player) > 28);
   }
 
@@ -289,6 +296,7 @@ export function createAuthoritative110Traffic(network, options = {}) {
     if(now-interestAt>=250||players.length!==interestPlayers.length){interestCache.clear();interestAt=now;}interestPlayers=players;
     lastPlayerCount = players.length;
     const config = preset();
+    openings.update(agents,players,now);
     const sorted = new Map();
     for (const agent of agents) {
       const bucket = sorted.get(agent.lane.id) || [];
@@ -301,7 +309,7 @@ export function createAuthoritative110Traffic(network, options = {}) {
         const agent = bucket[index];
         if(agent.expired){agent.speedMps=0;continue;}
         const ahead = bucket[index + 1];
-        let target = agent.cruiseMps;
+        let target = openings.cruise(agent,agent.cruiseMps,config.speedKmh[1]/3.6,dt,players);
         const headway=agent.headway*(presetName==='rush'?.8:presetName==='light'?1.5:1);
         if (ahead) {
           const gap = ahead.distance - agent.distance;
@@ -315,6 +323,7 @@ export function createAuthoritative110Traffic(network, options = {}) {
         const links=outgoing.get(agent.lane.id)||[],next=links.find(l=>l.fromDistanceM>=agent.distance);
         if(next&&!mergeClear(agent,next,players))target=Math.min(target,followingSpeed(next.fromDistanceM-agent.distance,0,config.decelerationMps2,.5));
         if(!agent.lane.loop&&!links.some(l=>l.fromDistanceM>=agent.distance))target=Math.min(target,followingSpeed(agent.lane.lengthM-agent.distance,0,config.decelerationMps2,.5));
+        target=openings.target(agent,target,dt,players);
         const rate = target < agent.speedMps ? config.decelerationMps2 : config.accelerationMps2;
         agent.brake=target<agent.speedMps-.3?1:0;
         agent.speedMps += clamp(target - agent.speedMps, -rate * dt, rate * dt);

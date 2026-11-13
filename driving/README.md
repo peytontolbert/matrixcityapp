@@ -68,6 +68,23 @@ name. `--detect-steam PATH` verifies discovery without changing settings or join
 
 ## Accounts and traffic control
 
+Traffic uses a shared cross-lane planner to reduce three-car walls on contiguous
+same-direction lanes. Spawn grids are staggered and reject aligned three-lane
+formations. Every 250 ms, a six-second lookahead chooses a yielding car and lets
+a leading car separate within the preset speed limit. Cooperative deceleration
+and the return from a speed-up are capped at 1.2 m/s²; normal obstacle, curve and
+following limits take priority. Faster players approaching from behind suppress
+artificial braking inside four seconds of closing distance. Vehicle identities,
+native slots and visible positions remain continuous. This creates opportunities,
+not a guaranteed empty route through stopped traffic or other players.
+
+`driving/tests/traffic-openings.test.mjs` includes a time-expanded reachable-path
+search at 180 km/h and a five-minute multiplayer simulation. The optional offline
+`traffic-openings-live.mjs` reads a private authored road from
+`MATRIX_TRAFFIC_NETWORK`, with optional `MATRIX_TRAFFIC_BASELINE_MODULE` and
+`MATRIX_TRAFFIC_REPORT` for comparative reports. It does not connect to live rooms
+and evaluates route geometry separately from collision/grounding validation.
+
 Browser tickets and native join links require a current Matrix Games account.
 Identity comes from the account session, never the request body. Both join paths
 share a 12/minute account quota; admissions are also limited to 30/minute per IP.
