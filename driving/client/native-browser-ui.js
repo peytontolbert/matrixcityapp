@@ -4,7 +4,7 @@ export function nativeBrowserUI({api,profileApi,requireAccount,message}){
  let actor,key,setup={},busy=false,store,deviceId,pending;
  const available=supported();
  if(available){store=new NativeStore();deviceId=localStorage.getItem('matrixgames-native-device');if(!deviceId){deviceId=crypto.randomUUID();localStorage.setItem('matrixgames-native-device',deviceId);}}
- const explain=()=>{summary.textContent=!available?'Use Chrome or Edge on Windows over HTTPS for browser setup, or use the optional launcher.':!actor?'Sign in to set up native play.':(setup.steam?setup.steam.name+' → '+(setup.gamePath||'assettocorsa'):'Choose your Steam library or Assetto Corsa folder')+' · '+(setup.cfg?'Race settings selected':'Choose Documents / Assetto Corsa / cfg')+(pending?' · Previous race settings are backed up. Close Assetto, then restore before another join.':'');
+ const explain=()=>{summary.textContent=!available?'Use Chrome or Edge on Windows over HTTPS for browser setup, or use the optional launcher.':!actor?'Sign in to set up native play.':(setup.steam?setup.steam.name+' → '+(setup.gamePath||'assettocorsa'):'Choose your Steam library or Assetto Corsa folder')+' · '+(setup.cfg?'Race settings selected':'Choose Documents / Assetto Corsa')+(pending?' · Previous race settings are backed up. Close Assetto, then restore before another join.':'');
   for(const button of [steam,cfg,save,forget])button.disabled=!available||!actor||busy||Boolean(pending);
   restore.disabled=!pending||busy;keep.hidden=!pending;keep.disabled=busy;driver.disabled=id.disabled=busy;
  };
@@ -28,7 +28,7 @@ export function nativeBrowserUI({api,profileApi,requireAccount,message}){
   let folder=await showDirectoryPicker({id:'matrixgames-race',mode:'readwrite',startIn:'documents'});
   if(folder.name.toLowerCase()!=='cfg')try{folder=await directory(folder,'cfg');}catch{}
   const text=await readText(await folder.getFileHandle('race.ini'));
-  if(!/^\[RACE\]/im.test(text)||!/^\[HEADER\]/im.test(text))throw Error('Choose Documents / Assetto Corsa / cfg. Run Assetto once if race.ini does not exist yet.');
+  if(!/^\[RACE\]/im.test(text)||!/^\[HEADER\]/im.test(text))throw Error('Choose Documents / Assetto Corsa. Run Assetto once if race.ini does not exist yet.');
   await sameAccount();setup={...setup,cfg:folder};if(!id.value)id.value=text.match(/^GUID=(7656119[0-9]{10})\s*$/m)?.[1]||'';
   await store.set(key,setup);message('Race settings remembered. Confirm your Steam ID and save your profile.');
  });

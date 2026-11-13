@@ -139,12 +139,10 @@ banks, weather/time synchronization and exact native wheel/suspension telemetry
 are not provided by these standalone ports. Production deployment requires the
 repository release pipeline and approval. Matrix City production is unchanged.
 
-## Persistent highscores
-
 ## Browser-managed native launch
 
 On HTTPS in Chrome/Edge, native setup accepts a Steam library or the Assetto
-installation directory (read access), plus Documents/Assetto Corsa/cfg (write
+installation directory (read access), plus Documents/Assetto Corsa (write
 access). Handles are retained in IndexedDB per Matrix account and browser device.
 `GET/POST /v1/native-setup` stores only folder display names, relative game
 location, driver name and Steam ID in PostgreSQL. It never stores handles, file
