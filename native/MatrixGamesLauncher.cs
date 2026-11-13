@@ -26,6 +26,7 @@ public class MatrixGamesLauncher : Form {
     readonly TextBox root = new TextBox { Width=480 };
     readonly TextBox name = new TextBox { Width=260, Text="Driver" };
     readonly TextBox session = new TextBox { Width=480 };
+    readonly Label detected = new Label { AutoSize=false, Width=570, Height=42 };
     readonly Label status = new Label { AutoSize=false, Width=570, Height=150 };
     readonly Button launch = new Button { Text="Check content and join", Width=210, Height=36 };
     static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength=131072 };
@@ -74,12 +75,76 @@ public class MatrixGamesLauncher : Form {
             if(!File.Exists(Path.Combine(directory,relative))&&!Directory.Exists(Path.Combine(directory,relative)))missing.Add(relative);
         return missing.ToArray();
     }
-    static string InstallGuess() {
-        string steam=Convert.ToString(Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam","SteamPath", ""));
-        var candidates=new List<string>();if(steam.Length>0)candidates.Add(Path.Combine(steam,"steamapps","common","assettocorsa"));
-        string libraries=Path.Combine(steam,"steamapps","libraryfolders.vdf");
-        if(File.Exists(libraries))foreach(Match m in Regex.Matches(File.ReadAllText(libraries),"\"path\"\\s*\"([^\"]+)\""))candidates.Add(Path.Combine(m.Groups[1].Value.Replace("\\\\","\\"),"steamapps","common","assettocorsa"));
-        return candidates.FirstOrDefault(p=>File.Exists(Path.Combine(p,"acs.exe")))??"";
+    static string ReadSteamMetadata(string file) {
+        try { var info=new FileInfo(file);return info.Exists&&info.Length<=1048576?File.ReadAllText(file):""; }
+        catch(IOException){return "";}catch(UnauthorizedAccessException){return "";}
+    }
+    public static string ResolveGame(string selected) {
+        return ResolveGame(selected,File.Exists,ReadSteamMetadata);
+    }
+    // Only inspect known Steam metadata and executable paths, never crawl the disk.
+    static string ResolveGame(string selected,Func<string,bool> exists,Func<string,string> read) {
+        if(string.IsNullOrWhiteSpace(selected)||!Path.IsPathRooted(selected))return "";
+        string folder;
+        try{folder=Path.GetFullPath(selected.Trim());}catch(ArgumentException){return "";}catch(NotSupportedException){return "";}catch(PathTooLongException){return "";}
+        if(exists(Path.Combine(folder,"acs.exe")))return folder; // Older saved game folders remain valid.
+        string apps=string.Equals(Path.GetFileName(folder.TrimEnd('\\','/')),"steamapps",StringComparison.OrdinalIgnoreCase)?folder:Path.Combine(folder,"steamapps");
+        var libraries=new List<string>{apps};
+        foreach(string metadata in new[]{Path.Combine(apps,"libraryfolders.vdf"),Path.Combine(folder,"config","libraryfolders.vdf")}){
+            foreach(Match match in Regex.Matches(read(metadata),@"""(?:path|[0-9]+)""\s*""([^""]+)""")){
+                string library=match.Groups[1].Value.Replace(@"\\",@"\");
+                if(!Path.IsPathRooted(library)||library.IndexOfAny(Path.GetInvalidPathChars())>=0)continue;
+                string candidate=Path.Combine(library,"steamapps");
+                if(!libraries.Contains(candidate,StringComparer.OrdinalIgnoreCase))libraries.Add(candidate);
+                if(libraries.Count>=64)break;
+            }
+            if(libraries.Count>=64)break;
+        }
+        foreach(string library in libraries){
+            var names=new List<string>{"assettocorsa"};
+            var manifest=Regex.Match(read(Path.Combine(library,"appmanifest_244210.acf")),@"""installdir""\s*""([^""]+)""",RegexOptions.IgnoreCase);
+            string installed=manifest.Success?manifest.Groups[1].Value:"";
+            if(installed.Length>0&&installed.Length<=128&&installed!="."&&installed!=".."&&installed.IndexOfAny(Path.GetInvalidFileNameChars())<0)names.Insert(0,installed);
+            foreach(string name in names){string game=Path.Combine(library,"common",name);if(exists(Path.Combine(game,"acs.exe")))return game;}
+        }
+        return "";
+    }
+    static string SteamFolder() {
+        return Convert.ToString(Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam","SteamPath",""));
+    }
+    public static string DriverName(string saved) {
+        return !string.IsNullOrWhiteSpace(saved)&&saved.Length<=32&&!saved.Any(char.IsControl)&&!saved.Contains("=")&&!saved.Contains("[")?saved.Trim():"Driver";
+    }
+    static void TestSteamDiscovery() {
+        var files=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
+        Func<string,bool> exists=p=>files.ContainsKey(p);
+        Func<string,string> read=p=>files.ContainsKey(p)?files[p]:"";
+        string steam=@"C:\Steam",library=@"D:\Steam Library",game=Path.Combine(library,"steamapps","common","assettocorsa");
+        files[Path.Combine(steam,"steamapps","libraryfolders.vdf")]="\"libraryfolders\" { \"0\" { \"path\" \"C:\\\\Steam\" } \"1\" { \"path\" \"D:\\\\Steam Library\" } }";
+        files[Path.Combine(game,"acs.exe")]="";
+        if(ResolveGame(steam,exists,read)!=game||ResolveGame(library,exists,read)!=game||ResolveGame(game,exists,read)!=game)throw new Exception("Steam library discovery failed");
+        if(ResolveGame(Path.Combine(library,"steamapps"),exists,read)!=game)throw new Exception("Steamapps discovery failed");
+        files[Path.Combine(steam,"steamapps","libraryfolders.vdf")]="\"LibraryFolders\" { \"1\" \"D:\\\\Steam Library\" }";
+        if(ResolveGame(steam,exists,read)!=game)throw new Exception("Legacy library discovery failed");
+        files.Remove(Path.Combine(game,"acs.exe"));
+        string custom=Path.Combine(library,"steamapps","common","Assetto Corsa Custom");
+        files[Path.Combine(custom,"acs.exe")]="";
+        files[Path.Combine(library,"steamapps","appmanifest_244210.acf")]="\"AppState\" { \"installdir\" \"Assetto Corsa Custom\" }";
+        if(ResolveGame(steam,exists,read)!=custom)throw new Exception("Steam manifest discovery failed");
+        files[Path.Combine(library,"steamapps","appmanifest_244210.acf")]="\"installdir\" \"..\\..\\outside\"";
+        if(ResolveGame(steam,exists,read)!=""||ResolveGame(@"C:\Documents\Assetto Corsa",exists,read)!=""||ResolveGame("",exists,read)!="")throw new Exception("Invalid Steam installation accepted");
+        if(DriverName(null)!="Driver"||DriverName(" ")!="Driver"||DriverName("bad\n[REMOTE]")!="Driver"||DriverName(" Peyton ")!="Peyton")throw new Exception("Driver defaults failed");
+    }
+    void RememberLocation(string selected,string game) {
+        using(var preferences=Registry.CurrentUser.CreateSubKey(@"Software\MatrixGames\Launcher")){
+            preferences.SetValue("SteamDirectory",selected);preferences.SetValue("GameDirectory",game);
+            preferences.SetValue("DriverName",DriverName(name.Text));
+        }
+    }
+    void LocateGame(bool remember) {
+        string game=ResolveGame(root.Text);
+        detected.Text=game.Length>0?"Assetto Corsa found: "+game:"Choose your Steam folder. Assetto Corsa must be installed in one of its libraries.";
+        if(remember&&game.Length>0)RememberLocation(root.Text,game);
     }
     static string SteamId() {
         object account=Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam\ActiveProcess","ActiveUser",0);
@@ -93,16 +158,20 @@ public class MatrixGamesLauncher : Form {
         return "[HEADER]\r\nVERSION=2\r\n[RACE]\r\nTRACK="+d["track"]+"\r\nCONFIG_TRACK=\r\nMODEL="+d["model"]+"\r\nMODEL_CONFIG=\r\nCARS=1\r\nAI_LEVEL=98\r\nFIXED_SETUP=0\r\nPENALTIES=0\r\n[REMOTE]\r\nACTIVE=1\r\nSERVER_IP="+d["host"]+"\r\nSERVER_PORT="+Port(d["gamePort"])+"\r\nSERVER_HTTP_PORT="+Port(d["httpPort"])+"\r\nREQUESTED_CAR="+d["model"]+"\r\nNAME="+driver+"\r\nGUID="+guid+"\r\nTEAM=\r\nPASSWORD=\r\n[CAR_0]\r\nMODEL=-\r\nSKIN="+skin+"\r\nDRIVER_NAME="+driver+"\r\nNATIONALITY=USA\r\n[SESSION_0]\r\nNAME=Practice\r\nTYPE=1\r\nDURATION_MINUTES=0\r\nSPAWN_SET=PIT\r\n[REPLAY]\r\nACTIVE=0\r\n[GHOST_CAR]\r\nRECORDING=0\r\nPLAYING=0\r\n[WEATHER]\r\nNAME=3_clear\r\n[TEMPERATURE]\r\nAMBIENT=26\r\nROAD=32\r\n[LIGHTING]\r\nSUN_ANGLE=6\r\nTIME_MULT=1\r\n[ASSISTS]\r\nAUTO_CLUTCH=0\r\nAUTO_BLIP=1\r\nAUTO_SHIFTER=0\r\nIDEAL_LINE=0\r\nSTABILITY_CONTROL=0\r\nABS=1\r\nTRACTION_CONTROL=1\r\n";
     }
     public MatrixGamesLauncher(string input) {
-        Text="Matrix Games - Assetto Corsa";Width=640;Height=540;StartPosition=FormStartPosition.CenterScreen;
+        Text="Matrix Games - Assetto Corsa";Width=640;Height=590;StartPosition=FormStartPosition.CenterScreen;
         var panel=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,Padding=new Padding(22),WrapContents=false};Controls.Add(panel);
         panel.Controls.Add(new Label{Text="Join from your browser. No session files needed.",AutoSize=true});
         var install=new Button{Text="Enable browser joins",Width=210,Height=36,Visible=string.IsNullOrEmpty(input)};
         install.Click+=(s,e)=>{try{InstallBrowserJoins();status.Text="Browser joins enabled. Return to matrixgames.app/driving and click Join with Assetto Corsa. You can close this setup window.";}catch(Exception error){status.Text=error.Message;}};panel.Controls.Add(install);
-        panel.Controls.Add(new Label{Text="Assetto Corsa folder",AutoSize=true});root.Text=Convert.ToString(Registry.GetValue(@"HKEY_CURRENT_USER\Software\MatrixGames\Launcher","GameDirectory",InstallGuess()));panel.Controls.Add(root);
-        var browse=new Button{Text="Choose game folder",Width=180};browse.Click+=(s,e)=>{using(var dialog=new FolderBrowserDialog())if(dialog.ShowDialog()==DialogResult.OK)root.Text=dialog.SelectedPath;};panel.Controls.Add(browse);
+        panel.Controls.Add(new Label{Text="Steam folder",AutoSize=true});
+        string saved=Convert.ToString(Registry.GetValue(@"HKEY_CURRENT_USER\Software\MatrixGames\Launcher","SteamDirectory",""));
+        string oldGame=Convert.ToString(Registry.GetValue(@"HKEY_CURRENT_USER\Software\MatrixGames\Launcher","GameDirectory",""));
+        root.Text=new[]{saved,SteamFolder(),oldGame}.FirstOrDefault(p=>ResolveGame(p).Length>0)??SteamFolder();
+        panel.Controls.Add(root);
+        var browse=new Button{Text="Locate Steam",Width=180};browse.Click+=(s,e)=>{try{using(var dialog=new FolderBrowserDialog{Description="Select your Steam folder or Steam library. We find Assetto Corsa automatically.",ShowNewFolderButton=false})if(dialog.ShowDialog()==DialogResult.OK){root.Text=dialog.SelectedPath;LocateGame(true);}}catch(Exception error){status.Text=error.Message;}};panel.Controls.Add(browse);panel.Controls.Add(detected);
         session.Text=input??"";
         var open=new Button{Text="Open an older session file",Width=210};open.Click+=(s,e)=>{using(var dialog=new OpenFileDialog{Filter="Matrix Games session|*.mgjoin.json"})if(dialog.ShowDialog()==DialogResult.OK){session.Text=dialog.FileName;status.Text="Session selected. Click Check content and join.";}};panel.Controls.Add(open);
-        panel.Controls.Add(new Label{Text="Driver name",AutoSize=true});name.Text=Convert.ToString(Registry.GetValue(@"HKEY_CURRENT_USER\Software\MatrixGames\Launcher","DriverName","Driver"));panel.Controls.Add(name);panel.Controls.Add(launch);panel.Controls.Add(status);
+        panel.Controls.Add(new Label{Text="Driver name (optional)",AutoSize=true});name.Text=DriverName(Convert.ToString(Registry.GetValue(@"HKEY_CURRENT_USER\Software\MatrixGames\Launcher","DriverName","")));panel.Controls.Add(name);panel.Controls.Add(launch);panel.Controls.Add(status);LocateGame(false);
         status.Text="First time: enable browser joins, then return to the website. Steam must be signed in and the matching track, 350Z, traffic Prius and CSP installed. Your race settings are restored after play.";
         launch.Click+=async(s,e)=>{launch.Enabled=false;try{await Join();}catch(Exception error){status.Text=error.Message;}finally{launch.Enabled=true;}};
         if(!string.IsNullOrEmpty(input)&&input.StartsWith("matrixgames:",StringComparison.OrdinalIgnoreCase)){
@@ -120,10 +189,11 @@ public class MatrixGamesLauncher : Form {
     }
     async Task JoinCore() {
         if(string.IsNullOrWhiteSpace(session.Text))throw new Exception("Return to matrixgames.app/driving and click Join with Assetto Corsa.");
-        string driver=name.Text.Trim();if(driver.Length<1||driver.Length>32||driver.Any(char.IsControl)||driver.Contains("=")||driver.Contains("["))throw new Exception("Use a driver name of 1-32 plain characters");
+        string driver=DriverName(name.Text);name.Text=driver;
         string authorization=session.Text.StartsWith("matrixgames:",StringComparison.OrdinalIgnoreCase)?JoinCode(session.Text):Convert.ToString(ReadSession(session.Text)["authorization"]);
-        string directory=Path.GetFullPath(root.Text);
-        if(!File.Exists(Path.Combine(directory,"acs.exe")))throw new Exception("Choose your installed Assetto Corsa folder first.");
+        string directory=ResolveGame(root.Text);
+        if(directory.Length==0)throw new Exception("Assetto Corsa was not found. Select your Steam folder or the Steam library where it is installed.");
+        RememberLocation(root.Text,directory);detected.Text="Assetto Corsa found: "+directory;
         if(Process.GetProcessesByName("acs").Any()||Process.GetProcessesByName("acs_x86").Any())throw new Exception("Exit the current Assetto Corsa session before joining.");
         string guid=SteamId();status.Text="Authorizing your join...";
         Dictionary<string,object> d;
@@ -136,7 +206,6 @@ public class MatrixGamesLauncher : Form {
         }
         ValidateServer(d);
         var missing=ValidateContent(directory,d);if(missing.Length>0)throw new Exception("Install required content, then click Join again on the website:\n"+string.Join("\n",missing));
-        using(var preferences=Registry.CurrentUser.CreateSubKey(@"Software\MatrixGames\Launcher")){preferences.SetValue("GameDirectory",directory);preferences.SetValue("DriverName",name.Text.Trim());}
         status.Text="Checking the native server...";
         string info,features;
         using(var web=new BoundedWebClient()){
@@ -166,11 +235,15 @@ public class MatrixGamesLauncher : Form {
     }
     [STAThread] public static int Main(string[] args) {
         try{
+            if(args.Length==2&&args[0]=="--detect-steam"){
+                string game=ResolveGame(args[1]);Console.WriteLine(Json.Serialize(new{found=game.Length>0,gameDirectory=game}));return game.Length>0?0:2;
+            }
             if(args.Length==3&&args[0]=="--check"){
                 var d=ReadSession(args[2]);var missing=ValidateContent(args[1],d);
                 Console.WriteLine(Json.Serialize(new{valid=missing.Length==0,missing=missing,contentManagerRequired=false}));return missing.Length==0?0:2;
             }
             if(args.Length==1&&args[0]=="--self-test"){
+                TestSteamDiscovery();
                 var d=new Dictionary<string,object>{{"track","nohesi_110"},{"model","06_ygt_53_nissan_350z"},{"host","example.com"},{"gamePort",9600},{"httpPort",8081}};
                 var text=RaceConfig(d,"Driver","76561198000000000","default");if(!text.Contains("ACTIVE=1")||!text.Contains("SERVER_PORT=9600"))throw new Exception("Launch config failed");
                 bool rejected=false;try{RaceConfig(d,"bad\n[REMOTE]","76561198000000000","default");}catch{rejected=true;}if(!rejected)throw new Exception("INI injection accepted");var code=new string('a',43);if(JoinCode("matrixgames://join?authorization="+code)!=code)throw new Exception("Protocol parse failed");
