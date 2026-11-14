@@ -7,6 +7,16 @@ const profile=process.env.DRIVING_TEST_PROFILE?JSON.parse(readFileSync(process.e
 const flat={ground:(x,y,z)=>({z:0,grip:1}),wall:()=>null};
 const car=(id='one',x=0)=>createCar(id,{position:[x,0,0],heading:0},profile);
 const drive={...NEUTRAL,throttle:1,brake:0,automaticLaunch:true};
+test('manual gears and analog input source reach the authoritative solver',()=>{
+ const raw={type:'input',sequence:1,throttle:.25,brake:0,steer:.4,handbrake:0,direction:1,transmission:'sequential',gear:3,source:'wheel',clutch:0};
+ const input=controls(raw);assert.equal(input.gearRequest,3);assert.equal(input.source,'wheel');assert.equal(input.transmission,'sequential');
+ for(const bad of [{gear:1.5},{gear:11},{source:'admin'},{clutch:2},{transmission:'anything'}])assert.throws(()=>controls({...raw,...bad}));
+});
+test('manual gear holds and forward/reverse changes are blocked at speed',{skip:!profile},()=>{
+ const a=car();a.input={...drive,transmission:'sequential',gearRequest:2,source:'controller'};
+ for(let i=0;i<1200;i++)stepCar(a,flat);assert.equal(a.state.gear,2);assert.ok(a.state.longitudinal>1);
+ a.input.gearRequest=-1;stepCar(a,flat);assert.equal(a.state.selectedGear,2);
+});
 test('controls reject pose injection, NaN, replay format and unbounded pedals',()=>{
  for(const raw of [{type:'state',sequence:1},{type:'input',sequence:1,throttle:Infinity,brake:0,steer:0,handbrake:0,direction:1},{type:'input',sequence:1,throttle:1.1,brake:0,steer:0,handbrake:0,direction:1}])assert.throws(()=>controls(raw));
  assert.equal(controls({type:'input',sequence:2,throttle:1,brake:0,steer:-1,handbrake:0,direction:1}).gearRequest,1);

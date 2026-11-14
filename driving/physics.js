@@ -16,7 +16,11 @@ export function controls(raw) {
  for(const k of ['throttle','brake','steer','handbrake'])if(!Number.isFinite(raw[k])||raw[k]<(k==='steer'?-1:0)||raw[k]>1)throw Error('Invalid control');
  if(raw.lights!==undefined&&typeof raw.lights!=='boolean')throw Error('Invalid lights');
  if(![-1,0,1].includes(raw.direction))throw Error('Invalid direction');
- return {lights:raw.lights===true,throttle:raw.throttle,brake:raw.brake,steer:raw.steer,handbrake:raw.handbrake,gearRequest:raw.direction,autoReverse:false,automaticLaunch:true,autoClutch:true,source:'keyboard'};
+ if(raw.transmission!==undefined&&!['automatic','sequential'].includes(raw.transmission))throw Error('Invalid transmission');
+ if(raw.gear!==undefined&&(!Number.isInteger(raw.gear)||raw.gear< -1||raw.gear>10))throw Error('Invalid gear');
+ if(raw.source!==undefined&&!['keyboard','mouse','wheel','controller'].includes(raw.source))throw Error('Invalid input source');
+ if(raw.clutch!==undefined&&(!Number.isFinite(raw.clutch)||raw.clutch<0||raw.clutch>1))throw Error('Invalid clutch');
+ return {lights:raw.lights===true,throttle:raw.throttle,brake:raw.brake,steer:raw.steer,handbrake:raw.handbrake,gearRequest:raw.gear??raw.direction,transmission:raw.transmission||'automatic',clutch:raw.clutch||0,autoReverse:false,automaticLaunch:true,autoClutch:true,source:raw.source||'keyboard'};
 }
 export const NEUTRAL={throttle:0,brake:1,steer:0,handbrake:0,gearRequest:1,autoReverse:false,autoClutch:true,source:'keyboard'};
 export function createCar(id,spawn,profile) {

@@ -292,3 +292,29 @@ API for live backups, or stop the driving service before copying its database.
 Do not copy only the main file while writes are active. Restarts and release
 rollbacks must reuse the same data directory. Database initialization alone does
 not deploy or start the driving service.
+
+
+## Browser controls
+
+Open Controls & settings before or during a session. Auto mode supports keyboard,
+relative mouse steering after clicking the road, standard controllers, and
+calibrated Gamepad API wheels. W/S are throttle/brake, A/D steer, Space is the
+handbrake, F/R shift up/down in sequential mode, and C centers mouse steering.
+Escape releases mouse capture and brakes until controls are resumed. The HUD
+shows the authoritative gear; the direction button selects reverse/forward.
+
+Wheel setup stores per-device steering, pedal and paddle calibration in this
+browser. Inverted and combined pedal axes are supported. Inputs pause while
+settings are open; disconnecting the active device requires explicit Resume.
+Force feedback, H-pattern shifters and combining separate USB devices are not
+implemented. Physical wheel feel still requires device-specific testing.
+
+The browser sends validated analog controls and transmission selections to the
+independent 120 Hz Matrix Games solver on the driving service. Wheel input uses
+the solver's direct steering path; keyboard input retains its steering filter.
+Matching car data does not establish native handling parity. Experimental native
+telemetry calibration work is not part of this controls release.
+
+Release the matching driving service input decoder before the frontend. Old
+clients remain compatible with the new decoder. The static GitHub Actions build
+names both the driving JavaScript and CSS by content hash to avoid stale controls.
