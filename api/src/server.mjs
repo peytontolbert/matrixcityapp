@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {launcherRoute} from './launcher.mjs';
 import {nativeSetupRoute} from './native-setup.mjs';
 import {arcadeRoute,installArcadeSocket} from './arcade.mjs';
 import {drivingRoute,installDrivingSocket} from './driving.mjs';
@@ -29,6 +30,7 @@ export function createServer({db,config,verify,fetcher}){
    if(req.method==='POST'&&path==='/v1/driving/asset-proofs'){await limit(db,'driving:metadata:'+clientKey(req,config),240,60);await drivingRoute(req,res,{db,config,url});return;}
    await limit(db,'requests:global',1200,60);
    const key=clientKey(req,config);await limit(db,'requests:'+key,120,60);
+   if(await launcherRoute(req,res,{db,config,url}))return;
    if(await quake3Route(req,res,{db,config,url}))return;
    if(await arcadeRoute(req,res,{db,config,url}))return;
    if(await drivingRoute(req,res,{db,config,url}))return;
