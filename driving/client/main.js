@@ -1,4 +1,4 @@
-import {NativeLaunchLinks} from './native-launch.js';
+import {nativeLaunchUrl} from './native-launch.js';
 import {DrivingRenderer} from './renderer.js';
 import {sampleInput} from './input.js';
 import {R2Assets} from './r2-cache.js';
@@ -27,7 +27,7 @@ globalThis.fetch=(input,options)=>{
  }return fetcher(input,options);
 };
 const api=async(path,body)=>{const r=await fetcher(origin+prefix+path,{credentials:'include',...(body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{})});const result=await r.json();if(!r.ok)throw Error(result.error||'Request failed');return result;};
-const nativeLinks=new NativeLaunchLinks(room=>api('/native-ticket',{room}));
+
 function message(text){status.textContent=text;}
 function stop(text='Session ended.'){
  ++generation;clearTimeout(connectTimer);ready=false;joining=false;keys.clear();current=[];snapshots=null;you=null;
@@ -40,14 +40,14 @@ async function refresh(){
  const r=await fetcher(contentBase+'/sessions');if(!r.ok)throw Error('Sessions unavailable');const data=await r.json();list.replaceChildren();for(const s of data.sessions){
   const card=document.createElement('section'),title=document.createElement('h2');title.textContent=s.room==='nohesi-110'?'110 · Los Angeles':'415 · Island';const note=document.createElement('p');note.textContent=s.ready?`${s.browserPlayers}/${s.capacity} browser seats · shared native session`:'Server unavailable';
   const browser=document.createElement('button');browser.textContent='Drive in browser';browser.disabled=!account||!s.ready||s.browserPlayers>=s.capacity;browser.onclick=()=>void join(s);
-  const native=document.createElement('button');native.textContent='Join with Assetto Corsa';native.disabled=!account||!s.ready;
+  const native=document.createElement('button');native.textContent='Join with Assetto Corsa';native.disabled=!s.ready;
   const help=document.createElement('p');help.hidden=true;
   native.onclick=async()=>{native.disabled=true;try{
-   const user=await requireAccount(),url=await nativeLinks.get(s.room,user.id);
+   const url=nativeLaunchUrl(s.room);
    help.replaceChildren();help.hidden=false;
    const retry=document.createElement('a');retry.href=url;retry.textContent='Open launcher again';retry.referrerPolicy='no-referrer';
    const install=document.createElement('a');install.href='/driving/MatrixGamesLauncher.exe';install.textContent='Install launcher';
-   help.append(retry,' · ',install,'. First time? Run the launcher once and choose Enable browser joins, then click Join here again. No JSON file is needed.');
+   help.append(retry,' · ',install,'. First time? Run the launcher, sign in, then choose Settings and Enable browser joins, then click Join here again. No JSON file is needed.');
    message('Opening Matrix Games Launcher. Allow your browser to open it if prompted.');
    try{retry.click();}catch{message('Click Open launcher again, or install the launcher first.');}
   }catch(e){message(e.message);}finally{native.disabled=false;}};

@@ -1,56 +1,60 @@
 {
-    "routes":  [
-                   {
-                       "route":  "/driving/*",
-                       "headers":  {
-                                       "Content-Security-Policy":  "default-src \u0027self\u0027; script-src \u0027self\u0027; style-src \u0027self\u0027; img-src \u0027self\u0027 blob: data:; connect-src \u0027self\u0027 https://api.matrixgames.app wss://api.matrixgames.app https://assets.peytontolbert.com; object-src \u0027none\u0027; base-uri \u0027none\u0027; frame-ancestors \u0027none\u0027; form-action \u0027self\u0027"
-                                   }
-                   },
-                   {
-                       "route":  "/arcade/*",
-                       "headers":  {
-                                       "Content-Security-Policy":  "default-src \u0027self\u0027; script-src \u0027self\u0027; style-src \u0027self\u0027 \u0027unsafe-inline\u0027; img-src \u0027self\u0027 blob: data:; media-src blob:; connect-src \u0027self\u0027 blob: https://api.matrixgames.app wss://api.matrixgames.app; object-src \u0027none\u0027; base-uri \u0027none\u0027; frame-ancestors \u0027none\u0027; form-action \u0027self\u0027",
-                                       "Referrer-Policy":  "no-referrer"
-                                   }
-                   },
-                   {
-                       "route":  "/quake3.html",
-                       "headers":  {
-                                       "Content-Security-Policy":  "default-src \u0027self\u0027; script-src \u0027self\u0027 \u0027unsafe-eval\u0027; style-src \u0027self\u0027 \u0027unsafe-inline\u0027; img-src \u0027self\u0027 data: blob:; font-src \u0027self\u0027 data:; connect-src \u0027self\u0027 https://api.matrixgames.app wss://api.matrixgames.app; object-src \u0027none\u0027; base-uri \u0027none\u0027; frame-ancestors \u0027none\u0027; form-action \u0027self\u0027"
-                                   }
-                   },
-                   {
-                       "route":  "/api/callback",
-                       "rewrite":  "/oauth-callback.html",
-                       "headers":  {
-                                       "Cache-Control":  "no-store",
-                                       "Referrer-Policy":  "no-referrer",
-                                       "Content-Security-Policy":  "default-src \u0027none\u0027; script-src \u0027self\u0027; base-uri \u0027none\u0027; frame-ancestors \u0027none\u0027; form-action \u0027none\u0027"
-                                   }
-                   },
-                   {
-                       "route":  "/oauth-callback.html",
-                       "headers":  {
-                                       "Cache-Control":  "no-store",
-                                       "Referrer-Policy":  "no-referrer",
-                                       "Content-Security-Policy":  "default-src \u0027none\u0027; script-src \u0027self\u0027; base-uri \u0027none\u0027; frame-ancestors \u0027none\u0027; form-action \u0027none\u0027"
-                                   }
-                   },
-                   {
-                       "route":  "/assets/*",
-                       "headers":  {
-                                       "Cache-Control":  "public, max-age=0, must-revalidate"
-                                   }
-                   }
-               ],
-    "mimeTypes":  {
-                      ".wasm":  "application/wasm"
-                  },
-    "globalHeaders":  {
-                          "Content-Security-Policy":  "default-src \u0027self\u0027; script-src \u0027self\u0027 \u0027wasm-unsafe-eval\u0027; style-src \u0027self\u0027; img-src \u0027self\u0027; connect-src \u0027self\u0027 https://api.matrixgames.app; object-src \u0027none\u0027; base-uri \u0027self\u0027; frame-ancestors \u0027none\u0027; form-action \u0027self\u0027",
-                          "X-Content-Type-Options":  "nosniff",
-                          "Referrer-Policy":  "strict-origin-when-cross-origin",
-                          "Permissions-Policy":  "camera=(), microphone=(), geolocation=()",
-                          "Cache-Control":  "no-cache"
-                      }
+  "routes": [
+    {
+      "route": "/servers",
+      "rewrite": "/servers.html"
+    },
+    {
+      "route": "/driving/*",
+      "headers": {
+        "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self' https://api.matrixgames.app wss://api.matrixgames.app https://assets.peytontolbert.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+      }
+    },
+    {
+      "route": "/arcade/*",
+      "headers": {
+        "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src blob:; connect-src 'self' blob: https://api.matrixgames.app wss://api.matrixgames.app; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+        "Referrer-Policy": "no-referrer"
+      }
+    },
+    {
+      "route": "/quake3.html",
+      "headers": {
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://api.matrixgames.app wss://api.matrixgames.app; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+      }
+    },
+    {
+      "route": "/api/callback",
+      "rewrite": "/oauth-callback.html",
+      "headers": {
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": "default-src 'none'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+      }
+    },
+    {
+      "route": "/oauth-callback.html",
+      "headers": {
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": "default-src 'none'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+      }
+    },
+    {
+      "route": "/assets/*",
+      "headers": {
+        "Cache-Control": "public, max-age=0, must-revalidate"
+      }
+    }
+  ],
+  "mimeTypes": {
+    ".wasm": "application/wasm"
+  },
+  "globalHeaders": {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self'; connect-src 'self' https://api.matrixgames.app; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Cache-Control": "no-cache"
+  }
 }

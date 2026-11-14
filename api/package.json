@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node src/server.mjs",
     "migrate": "node src/migrate.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test --test-concurrency=1 test/*.test.mjs"
   },
   "dependencies": {
     "jose": "6.1.3",

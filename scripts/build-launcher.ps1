@@ -1,9 +1,10 @@
+param(
+    [string]$SourceDirectory = (Join-Path (Split-Path -Parent $PSScriptRoot) 'launcher-source'),
+    [string]$OutputDirectory = (Join-Path (Split-Path -Parent $PSScriptRoot) 'dist\driving')
+)
 $ErrorActionPreference = 'Stop'
-$project = Split-Path -Parent $PSScriptRoot
-$compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-$output = Join-Path $project 'dist\driving'
-New-Item -ItemType Directory -Force -Path $output | Out-Null
-& $compiler /nologo /target:exe /optimize+ /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll "/out:$output\MatrixGamesLauncher.exe" (Join-Path $project 'native\MatrixGamesLauncher.cs')
-if ($LASTEXITCODE -ne 0) { throw 'Launcher compilation failed' }
-& (Join-Path $output 'MatrixGamesLauncher.exe') --self-test
-if ($LASTEXITCODE -ne 0) { throw 'Launcher self-test failed' }
+$expected = 'e46fc7bd541c793308deee2e08a6f177f74ecf24'
+$actual = (& git -C $SourceDirectory rev-parse HEAD)
+if ($LASTEXITCODE -ne 0 -or $actual -ne $expected) { throw 'Check out the pinned matrixgameslauncher revision before building.' }
+& (Join-Path $SourceDirectory 'build.ps1') -OutputDirectory $OutputDirectory -Test
+if ($LASTEXITCODE -ne 0) { throw 'Launcher build or tests failed' }
