@@ -61,5 +61,5 @@ test('native shared contacts use the loaded car mass and refresh changed occupan
  s.advance(0);assert.equal(s.nativeBodies.get(sample.id),first,'Repeated physics samples retain resolved contacts');
  sample.coupled=false;s.advance(0);assert.equal(s.nativeBodies.get(sample.id).kinematic,true);
  sample.account='replacement';s.advance(0);assert.equal(s.nativeBodies.get(sample.id).account,'replacement');
- sample.model='unreviewed-car';assert.throws(()=>s.advance(0),/No verified collision profile/);
+ sample.model='unreviewed-car';assert.throws(()=>s.advance(0),/Unsupported car/);
 });

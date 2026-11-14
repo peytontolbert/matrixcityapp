@@ -1,3 +1,4 @@
+import {knownModel} from '../vehicles.js';
 import {originFromFeet} from './pose.mjs';
 import {nativeEnvironment} from '../environment.js';
 import {readFileSync} from 'node:fs';
@@ -24,7 +25,7 @@ export class AssettoRelay {
   }
   nativeVehicles(now=Date.now()) { return now-this.#lastSuccess<1500?this.#native.map(v=>({...v,position:[...v.position],velocity:[...v.velocity]})):[]; }
   impact(car,delta){if(!car.coupled||!car.account)return;const previous=this.#impacts.get(car.id);const sum=delta.map((v,i)=>v+(previous?.delta[i]||0));if(Math.hypot(...sum)<=80)this.#impacts.set(car.id,{slot:Number(car.id.split(':')[1]),account:car.account,delta:sum,targetVelocity:[...car.velocity]});}
-  nativePassword(actor,steamId){return nativePassword(this.#room,actor,steamId,this.#token);}
+  nativePassword(actor,steamId,model){return nativePassword(this.#room,actor,steamId,this.#token,Date.now(),model);}
   async exchange(vehicles,scores=[]) {
     if(this.#busy)return {ready:false,reason:'busy'};
     this.#busy=true;
@@ -55,14 +56,14 @@ export class AssettoRelay {
       const ids=new Set();
       const native=data.vehicles.map(v=>{
         if(!Number.isInteger(v.slot)||v.slot<0||v.slot>254||ids.has(v.slot)
-          ||!/^[a-zA-Z0-9_-]{1,80}$/.test(v.model)||!Array.isArray(v.rotation)||v.rotation.length!==3
+          ||!knownModel(v.model)||!Array.isArray(v.rotation)||v.rotation.length!==3
           ||!v.rotation.every(Number.isFinite))throw Error('Invalid native car');
         ids.add(v.slot);
         return {id:`native:${v.slot}`,account:v.account,collision:v.collision===true,model:v.model,coupled:v.coupled===true,sampleTime:Number.isSafeInteger(v.physicsTime)&&v.physicsTime>0?v.physicsTime:data.serverTime,position:nativePointToMatrix(this.#room,v.feet||v.position),
           velocity:nativeVectorToMatrix(this.#room,v.velocity),heading:nativeYawToMatrix(this.#room,v.rotation[0]),pitch:v.rotation[1],roll:v.rotation[2],
           rpm:Math.max(0,Math.min(16000,Number(v.rpm)||800)),gear:Math.max(-1,Math.min(14,(Number(v.gear)||0)-1)),throttle:Math.max(0,Math.min(1,(Number(v.gas)||0)/255)),brake:v.brake===true?1:0,lights:v.lights===true,steer:Math.max(-1,Math.min(1,((Number.isFinite(v.steer)?v.steer:127)-127.5)/127.5))};
       });
-      this.poseOffsets=Object.fromEntries(Object.entries(data.poseOffsets||{}).filter(([model,value])=>['06_ygt_53_nissan_350z','nohesi_traffic_toyota_prius'].includes(model)&&Number.isFinite(value)&&value>.05&&value<2));this.environment=nativeEnvironment(data.environment);this.#native=native;this.#lastSuccess=Date.now();
+      this.poseOffsets=Object.fromEntries(Object.entries(data.poseOffsets||{}).filter(([model,value])=>knownModel(model)&&Number.isFinite(value)&&value>.05&&value<2));this.environment=nativeEnvironment(data.environment);this.#native=native;this.#lastSuccess=Date.now();
       return {ready:true,appliedSequence:data.appliedSequence,rejected};
     } catch(error) { return {ready:false,reason:error.message}; }
     finally { this.#busy=false; }

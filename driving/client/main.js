@@ -70,7 +70,8 @@ async function join(session){
   ready=data.ready===true;if(!ready){keys.clear();message('Connection to native server interrupted. Driving paused.');return;}
   clearTimeout(connectTimer);document.body.classList.remove('loading');document.querySelector('#leave').textContent='Leave session';
   try{if(!snapshots.push(data,performance.now()))return;}catch{stop('Invalid driving state. Please rejoin.');return;}
-  updateScores(data);renderer.nativeEnvironment=data.environment;current=data.cars;you=data.you;received=performance.now();document.body.classList.add('playing');if(performance.now()>noticeUntil)message('Click road for mouse steering · W/S throttle/brake · F gear up · R gear down · C center · Esc release · Controls for wheel setup');
+  const modelIds=data.cars.map(c=>c.model);ready=modelIds.every(id=>renderer.cars.models.has(id));renderer.cars.ensureModels(modelIds).catch(e=>{if(attempt===generation)stop(e.message);});if(!ready){keys.clear();message("Loading nearby car models. Driving paused.");}
+  updateScores(data);renderer.nativeEnvironment=data.environment;current=data.cars;you=data.you;received=performance.now();document.body.classList.add('playing');if(ready&&performance.now()>noticeUntil)message('Click road for mouse steering · W/S throttle/brake · F gear up · R gear down · C center · Esc release · Controls for wheel setup');
   document.querySelector('#population').textContent=data.cars.filter(c=>c.kind==='browser').length+' browser · '+data.cars.filter(c=>c.kind==='native').length+' native · '+data.cars.filter(c=>c.kind==='traffic').length+' traffic';
  }else if(data.type==='notice'){message(data.message);noticeUntil=performance.now()+4000;}else if(data.type==='error')stop(data.error);};
  socket.onclose=()=>{if(attempt===generation)stop('Disconnected. Rejoin to continue.');};socket.onerror=()=>{if(attempt===generation)stop('Unable to connect. Check sign-in and try again.');};joining=false;

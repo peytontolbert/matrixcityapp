@@ -1,13 +1,14 @@
 import {randomBytes,createHash} from 'node:crypto';
+import {vehicle,DEFAULT_MODEL} from './vehicles.js';
 import {TrafficSurface} from './traffic-surface.js';
 import {CutUpScoring,DrivingLeaderboard} from './scoring.mjs';
 import {createAuthoritative110Traffic} from './traffic.js';
 import {createCar,controls,NEUTRAL,STEP,stepCar,resolveCars,wireCar,vehicleBody} from './physics.js';
 const hash=t=>createHash('sha256').update(t).digest('hex');
 export class DrivingSession {
- constructor({room,world,profile,relay,capacity=4,trafficCapacity=8,trafficPreset='heavy',native,clock=Date.now,leaderboard=new DrivingLeaderboard()}){
+ constructor({room,world,profile,nativeSlots,relay,capacity=4,trafficCapacity=8,trafficPreset='heavy',native,clock=Date.now,leaderboard=new DrivingLeaderboard()}){
   if(capacity<1||trafficCapacity<1)throw Error('Invalid capacity');
-  Object.assign(this,{room,world,profile,relay,capacity,native,clock});this.players=new Map();this.tickets=new Map();this.loading=new Set();this.sequence=0;this.debt=0;this.ready=false;this.lastExchange=0;this.exchangeBusy=false;this.error=null;
+  Object.assign(this,{room,world,profile,nativeSlots,relay,capacity,native,clock});this.players=new Map();this.tickets=new Map();this.loading=new Set();this.sequence=0;this.debt=0;this.ready=false;this.lastExchange=0;this.exchangeBusy=false;this.error=null;
   this.trafficSurface=new TrafficSurface(world);
   this.scoring=new CutUpScoring(room,leaderboard);this.scoreRows=new Map();this.collided=new Set();this.scoreAt=0;
   this.traffic=createAuthoritative110Traffic(world.network,{maximumPopulation:trafficCapacity,preset:trafficPreset,models:['prius'],surface:s=>this.trafficSurface.sample(s)});this.trafficCars=[];
@@ -55,7 +56,7 @@ export class DrivingSession {
   this.sweep();this.debt+=Math.min(.1,Math.max(0,elapsed));
   const now=this.clock();if(now-this.lastExchange>1500)this.ready=false;
   this.nativeBodies??=new Map();const samples=this.relay.nativeVehicles(),liveNative=new Set(samples.map(v=>v.id));for(const id of this.nativeBodies.keys())if(!liveNative.has(id))this.nativeBodies.delete(id);
-  const natives=samples.map(v=>{const previous=this.nativeBodies.get(v.id);if(previous&&previous.sampleTime===v.sampleTime&&previous.model===v.model&&previous.account===v.account&&previous.coupled===v.coupled)return previous;const body={...v,kind:'native',kinematic:!v.coupled,...vehicleBody(this.profile,v.model)};this.nativeBodies.set(v.id,body);return body;});
+  const natives=samples.map(v=>{const previous=this.nativeBodies.get(v.id);if(previous&&previous.sampleTime===v.sampleTime&&previous.model===v.model&&previous.account===v.account&&previous.coupled===v.coupled)return previous;const body={...v,kind:'native',kinematic:!v.coupled,...((v.model??DEFAULT_MODEL)===DEFAULT_MODEL?vehicleBody(this.profile):(({mass,length,width,height})=>({mass,length,width,height}))(vehicle(v.model)))};this.nativeBodies.set(v.id,body);return body;});
   if(!this.ready){for(const p of this.players.values())p.car.input={...NEUTRAL};this.debt=0;return;}
   const nativeBefore=new Map(natives.map(v=>[v.id,[...v.velocity]]));
   const interest=[...this.players.values()].map(p=>({x:p.car.position[0],y:p.car.position[1],feetZ:p.car.position[2],velocity:p.car.velocity,heading:p.car.heading})).concat(natives.map(v=>({x:v.position[0],y:v.position[1],feetZ:v.position[2],velocity:v.velocity,heading:v.heading})));
@@ -101,6 +102,6 @@ export class DrivingSession {
   }finally{this.exchangeBusy=false;}
  }
  snapshot(){return {type:'state',schema:1,room:this.room,scores:[...this.scoreRows.values()],leaderboard:this.scoring.board.top(this.room),environment:this.relay.environment,sequence:++this.sequence,serverTime:this.clock(),ready:this.ready,cars:[...this.players.values()].map(p=>wireCar(p.car)).concat(this.trafficCars.map(wireCar),this.relay.nativeVehicles().map(v=>wireCar({...v,kind:'native'})))};}
- info(){return {room:this.room,ready:this.ready,browserPlayers:this.players.size,capacity:this.capacity,native:this.native,spawn:this.world.spawn,model:'06_ygt_53_nissan_350z'};}
+ info(){return {cars:[...new Set((this.nativeSlots||[{model:DEFAULT_MODEL}]).map(s=>s.model))].map(id=>({id,name:vehicle(id).name})),nativePlayers:this.relay.nativeVehicles().length,nativeCapacity:this.nativeSlots?.length||4,room:this.room,ready:this.ready,browserPlayers:this.players.size,capacity:this.capacity,native:this.native,spawn:this.world.spawn,model:'06_ygt_53_nissan_350z'};}
  async close(){this.closed=true;this.players.clear();this.tickets.clear();await this.relay.exchange([]);}
 }

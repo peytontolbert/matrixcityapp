@@ -13,7 +13,7 @@ test('relay carries target velocity and actual physics sample time across bridge
   globalThis.fetch=async(url,request)=>{
    frame=JSON.parse(request.body);
    return new Response(JSON.stringify({schema:1,room:'nohesi-110',revision:TRACKS['nohesi-110'].revision,serverTime:bridgeTime,appliedSequence:frame.sequence,
-    vehicles:[{slot:0,account:'fixture-account',model:'car',position:[0,0,0],feet:[0,0,0],rotation:[0,0,0],velocity:[50,0,0],coupled:true,physicsTime:stamp}]}));
+    vehicles:[{slot:0,account:'fixture-account',model:'06_ygt_53_nissan_350z',position:[0,0,0],feet:[0,0,0],rotation:[0,0,0],velocity:[50,0,0],coupled:true,physicsTime:stamp}]}));
   };
   const relay=new AssettoRelay({room:'nohesi-110',endpoint:'http://127.0.0.1:8081/_matrix/bridge/v1/exchange',tokenFile:key,slots:[]});
   assert.equal((await relay.exchange([])).ready,true);
