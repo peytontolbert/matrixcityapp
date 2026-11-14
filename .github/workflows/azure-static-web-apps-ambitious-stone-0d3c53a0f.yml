@@ -59,7 +59,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: peytontolbert/matrixgameslauncher
-          ref: e46fc7bd541c793308deee2e08a6f177f74ecf24
+          ref: 92518cf94f735adb6c7889111929269f5f9d8bc5
           path: launcher-source
       - name: Build and test native launcher
         shell: powershell
