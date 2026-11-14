@@ -1,17 +1,18 @@
 import {nativeLaunchUrl} from './native-launch.js';
 import {DrivingRenderer} from './renderer.js';
-import {sampleInput} from './input.js';
+import {DrivingControls} from './controls-ui.js';
 import {R2Assets} from './r2-cache.js';
 import {Snapshots} from './snapshots.js';
 import {DrivingAudio} from './audio.js';
 import {ASSET_BASE} from '../world.js';
 const status=document.querySelector('#status'),list=document.querySelector('#sessions'),canvas=document.querySelector('canvas');
+const controls=new DrivingControls(canvas,new Set(),text=>{status.textContent=text;});
 const local=location.protocol==='http:';
 const origin='https://api.matrixgames.app',prefix='/v1/driving',contentBase=local?location.origin:origin+prefix;
-let socket,renderer,snapshots,current=[],you,received=0,sequence=0,keys=new Set(),direction=1,joining=false,ready=false,generation=0,connectTimer;
+let socket,renderer,snapshots,current=[],you,received=0,sequence=0,keys=controls.keys,direction=1,joining=false,ready=false,generation=0,connectTimer;
 const fetcher=globalThis.fetch.bind(globalThis);
 const assets=new R2Assets({base:contentBase,fetcher});
-document.querySelector('#direction').onclick=()=>{direction=direction===1?-1:1;document.querySelector('#direction').textContent=direction===1?'Forward':'Reverse';};
+document.querySelector('#direction').onclick=()=>{if(controls.config.transmission==='sequential'){controls.gear=controls.gear<0?1:-1;return;}direction=direction===1?-1:1;document.querySelector('#direction').textContent=direction===1?'Forward':'Reverse';};
 let lights=false;document.querySelector('#lights').onclick=()=>{lights=!lights;document.querySelector('#lights').textContent=lights?'Lights on':'Lights off';};
 let boardSignature='';
 function updateScores(data){const score=data.scores?.find(row=>row.id===data.you);document.querySelector('#run-score').textContent=String(score?.score||0);document.querySelector('#combo').textContent='x'+(score?.combo||1).toFixed(1);document.querySelector('#run-passes').textContent=(score?.passes||0)+' clean passes · 70+ km/h · collisions end the run';const rows=data.leaderboard||[],signature=JSON.stringify(rows);if(signature!==boardSignature){boardSignature=signature;const list=document.querySelector('#leaderboard');list.replaceChildren();for(const row of rows){const item=document.createElement('li');item.textContent=row.driver+' — '+row.score.toLocaleString();list.append(item);}if(!rows.length){const item=document.createElement('li');item.textContent='Be the first to set a score.';list.append(item);}}}
@@ -30,6 +31,7 @@ const api=async(path,body)=>{const r=await fetcher(origin+prefix+path,{credentia
 
 function message(text){status.textContent=text;}
 function stop(text='Session ended.'){
+ controls.release();
  ++generation;clearTimeout(connectTimer);ready=false;joining=false;keys.clear();current=[];snapshots=null;you=null;
  const ws=socket;socket=null;if(ws){ws.onclose=null;ws.onmessage=null;ws.onerror=null;ws.close();}
  renderer?.dispose();renderer=null;audio.dispose();audio=new DrivingAudio();sound.textContent='Sound off';document.body.classList.remove('playing','loading');
@@ -55,7 +57,7 @@ async function refresh(){
  }if(!joining&&!socket){if(loginError)message(loginError);else if(status.textContent==='Checking servers…')message('Choose browser driving or join with Assetto Corsa using Matrix Games Launcher.');}}catch(e){if(!joining&&!socket)message(e.message);}
 }
 async function join(session){
- if(joining||socket)return;joining=true;direction=1;document.querySelector('#direction').textContent='Forward';keys.clear();current=[];snapshots=new Snapshots(session.room);message('Loading track scenery…');
+ if(joining||socket)return;controls.start();joining=true;direction=1;document.querySelector('#direction').textContent='Forward';keys.clear();current=[];snapshots=new Snapshots(session.room);message('Loading track scenery…');
  const attempt=++generation;ready=false;document.body.classList.add('loading');document.querySelector('#leave').textContent='Cancel join';
  try{
  await requireAccount();if(attempt!==generation)return;
@@ -68,20 +70,20 @@ async function join(session){
   ready=data.ready===true;if(!ready){keys.clear();message('Connection to native server interrupted. Driving paused.');return;}
   clearTimeout(connectTimer);document.body.classList.remove('loading');document.querySelector('#leave').textContent='Leave session';
   try{if(!snapshots.push(data,performance.now()))return;}catch{stop('Invalid driving state. Please rejoin.');return;}
-  updateScores(data);renderer.nativeEnvironment=data.environment;current=data.cars;you=data.you;received=performance.now();document.body.classList.add('playing');message('Connected · W/S throttle/brake · A/D steer · Space handbrake · R reverse · F forward');
+  updateScores(data);renderer.nativeEnvironment=data.environment;current=data.cars;you=data.you;received=performance.now();document.body.classList.add('playing');if(performance.now()>noticeUntil)message('Click road for mouse steering · W/S throttle/brake · F gear up · R gear down · C center · Esc release · Controls for wheel setup');
   document.querySelector('#population').textContent=data.cars.filter(c=>c.kind==='browser').length+' browser · '+data.cars.filter(c=>c.kind==='native').length+' native · '+data.cars.filter(c=>c.kind==='traffic').length+' traffic';
  }else if(data.type==='notice'){message(data.message);noticeUntil=performance.now()+4000;}else if(data.type==='error')stop(data.error);};
  socket.onclose=()=>{if(attempt===generation)stop('Disconnected. Rejoin to continue.');};socket.onerror=()=>{if(attempt===generation)stop('Unable to connect. Check sign-in and try again.');};joining=false;
  }catch(e){if(attempt===generation)stop(e.message);}
 }
-addEventListener('keydown',e=>{if(!socket)return;if(['KeyW','KeyS','KeyA','KeyD','Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyR','KeyF'].includes(e.code)){e.preventDefault();keys.add(e.code);}if(e.code==='KeyR')direction=-1;if(e.code==='KeyF')direction=1;document.querySelector('#direction').textContent=direction===1?'Forward':'Reverse';});
+addEventListener('keydown',e=>{if(!socket||controls.dialog.open||/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return;if(['KeyW','KeyS','KeyA','KeyD','Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)){e.preventDefault();keys.add(e.code);}});
 addEventListener('keyup',e=>keys.delete(e.code));addEventListener('blur',()=>{keys.clear();audio.update(null,false);});document.addEventListener('visibilitychange',()=>{if(document.hidden){keys.clear();audio.update(null,false);}});
 document.querySelector('#recover').onclick=()=>{if(socket?.readyState===WebSocket.OPEN){keys.clear();socket.send(JSON.stringify({type:'recover'}));}};
 for(const button of document.querySelectorAll('[data-key]')){button.onpointerdown=e=>{e.preventDefault();button.setPointerCapture(e.pointerId);keys.add(button.dataset.key);};button.onpointerup=button.onpointercancel=button.onlostpointercapture=()=>keys.delete(button.dataset.key);}
 document.querySelector('#leave').onclick=()=>stop(joining?'Join cancelled.':'Session ended.');document.querySelector('#refresh').onclick=refresh;
 canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();stop('Graphics context interrupted. Rejoin after it recovers.');});
 canvas.addEventListener('webglcontextrestored',()=>message('Graphics recovered. You can rejoin.'));
-setInterval(()=>{if(socket?.readyState!==WebSocket.OPEN)return;if(socket.bufferedAmount>8192){stop('Connection is too slow. Please rejoin.');return;}const pad=Array.from(navigator.getGamepads?.()||[]).find(p=>p?.connected&&p.mapping==='standard');if(document.hasFocus()&&!document.hidden){if(pad?.buttons[3]?.pressed)direction=-1;if(pad?.buttons[0]?.pressed)direction=1;document.querySelector('#direction').textContent=direction===1?'Forward':'Reverse';}const input=sampleInput(keys,{gamepad:pad,ready,focused:document.hasFocus()&&!document.hidden,stale:performance.now()-received>1200,direction});socket.send(JSON.stringify({type:'input',sequence:sequence++,lights,...input}));},33);
+setInterval(()=>{if(socket?.readyState!==WebSocket.OPEN)return;if(socket.bufferedAmount>8192){stop('Connection is too slow. Please rejoin.');return;}const input=controls.sample({ready,focused:document.hasFocus()&&!document.hidden,stale:performance.now()-received>1200,direction});socket.send(JSON.stringify({type:'input',sequence:sequence++,lights,...input}));},33);
 let lastFocus=0,lastDraw=performance.now();
 function draw(){
  requestAnimationFrame(draw);if(!renderer||!current.length)return;
@@ -90,7 +92,7 @@ function draw(){
  const own=cars.find(c=>c.id===you),attempt=generation;
  try{
   renderer.render(cars,own,dt);audio.update(own,ready&&document.hasFocus()&&!document.hidden&&now-received<1200,renderer.camera);
-  if(own){document.querySelector('#speed').textContent=Math.round(Math.hypot(...own.velocity)*3.6)+' km/h';
+  if(own){document.querySelector('#speed').textContent=Math.round(Math.hypot(...own.velocity)*3.6)+' km/h';document.querySelector('#gear').textContent='Gear '+(own.gear<0?'R':own.gear===0?'N':own.gear);document.querySelector('#direction').textContent=controls.config.transmission==='sequential'?'Select R / 1':direction===1?'Forward':'Reverse';
    if(now-lastFocus>1000){lastFocus=now;renderer.focus(own.position).catch(e=>{if(attempt===generation)stop(e.message);});}
   }
  }catch(e){stop('Rendering interrupted. Please rejoin.');console.warn(e);}
