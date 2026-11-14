@@ -132,10 +132,10 @@ index 0000000..5f6587c
 +}
 diff --git a/AssettoServer.Tests/MatrixNativeAdmissionTests.cs b/AssettoServer.Tests/MatrixNativeAdmissionTests.cs
 new file mode 100644
-index 0000000..62a42dc
+index 0000000..6147b8a
 --- /dev/null
 +++ b/AssettoServer.Tests/MatrixNativeAdmissionTests.cs
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,37 @@
 +using System;
 +using System.Security.Cryptography;
 +using System.Text;
@@ -147,9 +147,14 @@ index 0000000..62a42dc
 +    const string Actor="11111111-1111-4111-8111-111111111111",Key="test-only-native-admission-key",Model="06_ygt_53_nissan_350z";
 +    const ulong Steam=76561198000000000;
 +    static string Url(byte[] v)=>Convert.ToBase64String(v).TrimEnd('=').Replace('+','-').Replace('/','_');
-+    static string Ticket(string nonce="aaaaaaaaaaaaaaaa",long expires=190,string room="nohesi-110"){
++    static string Ticket(string nonce="aaaaaaaaaaaaaaaa",long expires=190,string room="nohesi-110",string model=Model){
 +        var payload=Url(Encoding.UTF8.GetBytes(Actor+"|"+Steam+"|"+expires+"|"+nonce));
-+        return "mg1."+payload+"."+Url(HMACSHA256.HashData(Encoding.UTF8.GetBytes(Key),Encoding.UTF8.GetBytes(room+"|"+payload)));
++        return "mg1."+payload+"."+Url(HMACSHA256.HashData(Encoding.UTF8.GetBytes(Key),Encoding.UTF8.GetBytes(room+"|"+model+"|"+payload)));
++    }
++    [Test] public void AcceptsSelectedModelAndRejectsSubstitution(){
++        var gate=new MatrixNativeAdmission("nohesi-110",Key);const string car="nohesi_m5_comp";
++        Assert.That(gate.Accept(Steam,Model,Ticket(model:car),100,out _),Is.False);
++        Assert.That(gate.Accept(Steam,car,Ticket(model:car),100,out _),Is.True);
 +    }
 +    [Test] public void AcceptsOnceAndReservesAccountUntilDisconnect(){
 +        var gate=new MatrixNativeAdmission("nohesi-110",Key);
@@ -550,7 +555,7 @@ index 0000000..e509c13
 +function script.release()hud:dispose()end
 diff --git a/AssettoServer/Server/Lua/matrix_physics.lua b/AssettoServer/Server/Lua/matrix_physics.lua
 new file mode 100644
-index 0000000..f9549c6
+index 0000000..a00e3e9
 --- /dev/null
 +++ b/AssettoServer/Server/Lua/matrix_physics.lua
 @@ -0,0 +1,90 @@
@@ -564,7 +569,7 @@ index 0000000..f9549c6
 +local bySession, collisionStates={},{}
 +local function carBySession(slot)return bySession[slot]end
 +local calibrationAt,calibrationIndex,nextIndex,diagnosticAt=0,1,0,0
-+local modelGround={['06_ygt_53_nissan_350z']=.25743,['nohesi_traffic_toyota_prius']=.50341796875}
++local modelGround={['06_ygt_53_nissan_350z']=0.25743,['hk51_traffic_tesla_model3']=0.15,['jw_porsche_991_gt3_touring']=0.15022,['nohesi_lamborghini_svj_63']=0.15,['nohesi_lamborghini_temerario_vlct']=0.15,['nohesi_lamborghini_urus_performante_vlct']=0.15,['nohesi_m3_e92']=0.27553,['nohesi_m5_comp']=0.16077,['nohesi_m5_e60_hjckd']=0.15,['nohesi_mclaren_720s_hjckd']=0.15,['nohesi_mercedes_a45_brabus']=0.15004,['nohesi_mercedes_c63_amg_w204_blackseries']=0.15112,['nohesi_mercedes_gt63']=0.15,['nohesi_mercedes_sl63_vlct']=0.15,['nohesi_mitsubishi_evo8']=0.21105,['nohesi_mitsubishi_evo_x_varis_hjckd']=0.21407,['nohesi_nissan_gtr_r35_vlct']=0.25497,['nohesi_nissan_maxima_2jz']=0.15422,['nohesi_porsche_gt3rs_vlct']=0.15,['nohesi_skyline_r35']=0.15,['nohesi_subaru_wrx_sti_gd_kz']=0.15,['nohesi_traffic_toyota_prius']=.50341796875}
 +local calibrationEnabled=__MATRIX_CALIBRATION__
 +local calibrationLogged={}
 +local sendCalibration=ac.OnlineEvent({ac.StructItem.key('MG_PoseCalibration_v1'),slot=ac.StructItem.byte(),offset=ac.StructItem.float()},function() end)
@@ -878,7 +883,7 @@ index 0000000..a82a405
 +}
 diff --git a/AssettoServer/Server/MatrixBridgeSettings.cs b/AssettoServer/Server/MatrixBridgeSettings.cs
 new file mode 100644
-index 0000000..0d6697e
+index 0000000..336c709
 --- /dev/null
 +++ b/AssettoServer/Server/MatrixBridgeSettings.cs
 @@ -0,0 +1,27 @@
@@ -904,14 +909,14 @@ index 0000000..0d6697e
 +            || result.Slots is not { Length: > 0 and <= 200 }
 +            || result.Slots.Any(s => s < 0 || s > 254)
 +            || result.Slots.Distinct().Count() != result.Slots.Length
-+            || result.PoseOffsets?.Any(p=>p.Key is not ("06_ygt_53_nissan_350z" or "nohesi_traffic_toyota_prius") || !float.IsFinite(p.Value) || p.Value is <.05f or >2f)==true)
++            || result.PoseOffsets?.Any(p=>!System.Text.RegularExpressions.Regex.IsMatch(p.Key,"^[a-zA-Z0-9_-]{1,80}$") || !float.IsFinite(p.Value) || p.Value is <.05f or >2f)==true)
 +            throw new InvalidDataException("Invalid Matrix bridge configuration");
 +        return result;
 +    }
 +}
 diff --git a/AssettoServer/Server/MatrixNativeAdmission.cs b/AssettoServer/Server/MatrixNativeAdmission.cs
 new file mode 100644
-index 0000000..124baa2
+index 0000000..fcc99b4
 --- /dev/null
 +++ b/AssettoServer/Server/MatrixNativeAdmission.cs
 @@ -0,0 +1,38 @@
@@ -935,10 +940,10 @@ index 0000000..124baa2
 +    public bool Accept(ulong steam, string model, string password, long now, out string? actor)
 +    {
 +        actor=null;
-+        if(model!="06_ygt_53_nissan_350z" || password.Length>240)return false;
++        if(!Regex.IsMatch(model,"^[a-zA-Z0-9_-]{1,80}$") || password.Length>240)return false;
 +        var parts=password.Split('.');
 +        if(parts.Length!=3||parts[0]!="mg1"||!Regex.IsMatch(parts[1],"^[A-Za-z0-9_-]+$")||!Regex.IsMatch(parts[2],"^[A-Za-z0-9_-]{43}$"))return false;
-+        var expected=Url(HMACSHA256.HashData(Encoding.UTF8.GetBytes(key),Encoding.UTF8.GetBytes(room+"|"+parts[1])));
++        var expected=Url(HMACSHA256.HashData(Encoding.UTF8.GetBytes(key),Encoding.UTF8.GetBytes(room+"|"+model+"|"+parts[1])));
 +        if(!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(expected),Encoding.ASCII.GetBytes(parts[2])))return false;
 +        string[] values;
 +        try { var p=parts[1].Replace('-','+').Replace('_','/');p=p.PadRight((p.Length+3)/4*4,'=');values=Encoding.UTF8.GetString(Convert.FromBase64String(p)).Split('|'); }

@@ -54,7 +54,7 @@ export function createDrivingServer({sessions,assets,key,staticRoot=null,physics
      if(!Array.isArray(features)||features.length>64||features.some(v=>typeof v!=='string'||!(/^[A-Z0-9_]{1,64}$/).test(v)))throw Error('Invalid server features');
      return json(res,200,{schema:2,room:body.room,...session.native,model:'06_ygt_53_nissan_350z',features});
     }
-    if(url.pathname==='/native-ticket')return json(res,200,nativeJoins.issue(actor,body.room));
+    if(url.pathname==='/native-ticket')return json(res,200,nativeJoins.issue(actor,body.room,body.model));
     nativeJoins.available(actor);return json(res,200,session.ticket(actor));
    }
    if(req.method==='GET'&&staticRoot){

@@ -1,3 +1,4 @@
+import {vehicle as vehicleDefinition,DEFAULT_MODEL,TRAFFIC_MODEL} from '../vehicles.js';
 import {vehicleMatrix} from './vehicle-pose.js';
 import {bindLighting} from './lighting.js';
 import {carVertex,carFragment,emissionState} from './materials.js';
@@ -8,14 +9,18 @@ import {fetchArrayBufferPreferredCompressed} from '../vendor/js/asset_fetcher.js
 import {ASSET_BASE} from '../world.js';
 import {extractFrustumPlanes,aabbIntersectsFrustum} from '../vendor/js/frustum_culling.js';
 export class Cars {
- constructor(gl,assets){this.gl=gl;this.assets=assets;this.models=new Map();this.textures=new Map();this.resources=[];this.animation=new Map();this.history=new Map();}
- async init(){
+ constructor(gl,assets){this.gl=gl;this.assets=assets;this.models=new Map();this.jobs=new Map();this.textures=new Map();this.resources=[];this.animation=new Map();this.history=new Map();}
+ async init(model=DEFAULT_MODEL){
   const gl=this.gl,shader=(type,text)=>{const s=gl.createShader(type);gl.shaderSource(s,text);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};
   const vs=shader(gl.VERTEX_SHADER,carVertex),fs=shader(gl.FRAGMENT_SHADER,carFragment);
   this.program=gl.createProgram();gl.attachShader(this.program,vs);gl.attachShader(this.program,fs);gl.linkProgram(this.program);gl.deleteShader(vs);gl.deleteShader(fs);if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw Error('Vehicle shader failed');
   this.uniforms=Object.fromEntries(['instanced','previousModel','previousVP','previousView','unjitteredVP','historyValid','vp','model','minimum','extent','diffuse','color','alpha','useAlpha','useTexture','normalMap','emissionMap','eye','useNormal','useEmission','emissionGain','roughness','f0','normalAG','reconstructZ'].map(n=>[n,gl.getUniformLocation(this.program,n)]));
   this.instanceBuffer=gl.createBuffer();this.resources.push(['buffer',this.instanceBuffer]);
-  for(const [model,path,lift] of [['06_ygt_53_nissan_350z','custom_vehicles/06_ygt_53_nissan_350z.json',.25743],['nohesi_traffic_toyota_prius','matrixgames/prius.json',.50342]]){
+  await this.ensureModels([model,TRAFFIC_MODEL]);
+ }
+ async ensureModels(models){for(const model of new Set(models)){if(this.models.has(model))continue;if(!this.jobs.has(model))this.jobs.set(model,this.loadModel(model));await this.jobs.get(model);}}
+ async loadModel(model){
+  const gl=this.gl,path=model===TRAFFIC_MODEL?'matrixgames/prius.json':vehicleDefinition(model).manifest,lift=model===TRAFFIC_MODEL?.50342:vehicleDefinition(model).groundOffset;
    const response=await fetch(new URL(path,ASSET_BASE));if(!response.ok)throw Error('Car manifest unavailable');const manifest=await response.json(),vehicle=manifest.vehicle||manifest.trafficModels?.prius,definition=manifest.meshes[vehicle.hash];
    // The published Prius medium LOD still references two retired meshes.
    // Its complete high LOD is published and hash-verified in the shared catalog.
@@ -38,7 +43,6 @@ export class Cars {
    }));const failed=results.find(r=>r.status==='rejected');if(failed)throw failed.reason;}
    if(lod==='high'){rows.forEach((row,index)=>row.historyKey=index);this.models.set(model,{rows,lift:vehicle.groundOffset??lift,wheelRadius:vehicle.wheelRadius||.325,wheelPivots:vehicle.wheelPivots||{}});}else this.models.get(model).lowRows=rows;
    }
-  }
  }
  async texture(url){
   if(this.textures.has(url))return this.textures.get(url);
